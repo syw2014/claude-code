@@ -8,3 +8,5 @@ coverage
 .vscode
 *.suo
 *.lock
+.claude/
+.specstory/
