@@ -50,6 +50,11 @@ type AdvisorConfig = {
   advisorModel?: string
 }
 
+type AdvisorAvailability = {
+  enabled: boolean
+  canUserConfigure: boolean
+}
+
 function getAdvisorConfig(): AdvisorConfig {
   return getFeatureValue_CACHED_MAY_BE_STALE<AdvisorConfig>(
     'tengu_sage_compass',
@@ -57,19 +62,45 @@ function getAdvisorConfig(): AdvisorConfig {
   )
 }
 
+export function deriveAdvisorAvailability(args: {
+  disabledByEnv: boolean
+  supportsFirstPartyBetas: boolean
+  remotelyEnabled: boolean
+  locallyConfigured: boolean
+}): AdvisorAvailability {
+  const {
+    disabledByEnv,
+    supportsFirstPartyBetas,
+    remotelyEnabled,
+    locallyConfigured,
+  } = args
+
+  if (disabledByEnv || !supportsFirstPartyBetas) {
+    return { enabled: false, canUserConfigure: false }
+  }
+
+  return {
+    enabled: remotelyEnabled || locallyConfigured,
+    canUserConfigure: true,
+  }
+}
+
 export function isAdvisorEnabled(): boolean {
-  if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL)) {
-    return false
-  }
-  // The advisor beta header is first-party only (Bedrock/Vertex 400 on it).
-  if (!shouldIncludeFirstPartyOnlyBetas()) {
-    return false
-  }
-  return getAdvisorConfig().enabled ?? false
+  return deriveAdvisorAvailability({
+    disabledByEnv: isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL),
+    supportsFirstPartyBetas: shouldIncludeFirstPartyOnlyBetas(),
+    remotelyEnabled: getAdvisorConfig().enabled ?? false,
+    locallyConfigured: Boolean(getInitialSettings().advisorModel),
+  }).enabled
 }
 
 export function canUserConfigureAdvisor(): boolean {
-  return isAdvisorEnabled() && (getAdvisorConfig().canUserConfigure ?? false)
+  return deriveAdvisorAvailability({
+    disabledByEnv: isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL),
+    supportsFirstPartyBetas: shouldIncludeFirstPartyOnlyBetas(),
+    remotelyEnabled: getAdvisorConfig().enabled ?? false,
+    locallyConfigured: Boolean(getInitialSettings().advisorModel),
+  }).canUserConfigure
 }
 
 export function getExperimentAdvisorModels():
@@ -77,7 +108,7 @@ export function getExperimentAdvisorModels():
   | undefined {
   const config = getAdvisorConfig()
   return isAdvisorEnabled() &&
-    !canUserConfigureAdvisor() &&
+    !getInitialSettings().advisorModel &&
     config.baseModel &&
     config.advisorModel
     ? { baseModel: config.baseModel, advisorModel: config.advisorModel }
