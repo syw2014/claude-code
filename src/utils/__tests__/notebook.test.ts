@@ -36,6 +36,14 @@ describe("parseCellId", () => {
     // regex is /^cell-(\d+)$/ so trailing text should fail
     expect(parseCellId("cell-0-extra")).toBeUndefined();
   });
+
+  test("returns undefined for negative numbers", () => {
+    expect(parseCellId("cell--1")).toBeUndefined();
+  });
+
+  test("parses leading zeros correctly", () => {
+    expect(parseCellId("cell-007")).toBe(7);
+  });
 });
 
 // ─── mapNotebookCellsToToolResult ──────────────────────────────────────
@@ -72,7 +80,7 @@ describe("mapNotebookCellsToToolResult", () => {
 
     const firstBlock = result.content![0] as { type: string; text: string };
     expect(firstBlock.type).toBe("text");
-    expect(firstBlock.text).toContain("cell-0");
+    expect(firstBlock.text).toContain('cell id="cell-0"');
     expect(firstBlock.text).toContain("x = 1");
   });
 
@@ -94,7 +102,7 @@ describe("mapNotebookCellsToToolResult", () => {
 
     const result = mapNotebookCellsToToolResult(data, "tool-2");
     // Two adjacent text blocks should be merged into one
-    const textBlocks = result.content!.filter(
+    const textBlocks = (result.content as any[]).filter(
       (b: any) => b.type === "text"
     );
     expect(textBlocks).toHaveLength(1);
@@ -127,7 +135,7 @@ describe("mapNotebookCellsToToolResult", () => {
     ];
 
     const result = mapNotebookCellsToToolResult(data, "tool-3");
-    const types = result.content!.map((b: any) => b.type);
+    const types = (result.content as any[]).map((b: any) => b.type);
     expect(types).toContain("image");
   });
 
