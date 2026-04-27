@@ -1936,195 +1936,218 @@ interface RuleCheckResult {
 - 新增行业 Runtime 代码拥有清晰边界，后续可独立演进为后端服务。
 - 对需要二次开发的 Claude Code 模块建立 adapter/facade，避免在原文件中散乱打补丁。
 
-#### 14.12.1 顶层目录策略
+#### 14.12.1 目录标记图例
+
+目录树中使用统一标记：
+
+| 标记 | 含义 | 开发策略 |
+|-----|-----|---------|
+| `[直接复用]` | 现有 Claude Code 能力可直接作为依赖使用 | 不改或少量配置 |
+| `[二次开发]` | 基于现有 Claude Code 模块改造 | 增加参数化、依赖注入、服务端 adapter |
+| `[新增]` | 行业 Runtime 新增能力 | 从本设计实现 |
+| `[保留不用]` | 保留现有 CLI/Ink/周边能力，但 Runtime 不依赖 | 不删除，服务端禁止 import |
+| `[参考]` | 可参考设计思想，不直接作为 Runtime 依赖 | 仅借鉴模式 |
+
+#### 14.12.2 建议项目目录树
 
 ```text
-src/
-  entrypoints/
-    cli.tsx                         # 保留：Claude Code CLI 入口
-    server.ts                       # 新增：IndustryGateway HTTP/SSE 入口
-  runtime/                          # 新增：行业 Agent Runtime 主干
-  industry/                         # 新增：行业适配注册与通用接口
-  server/                           # 新增：HTTP/SSE/API 中间件
-  persistence/                      # 新增：PostgreSQL/Redis/Milvus 访问层
-  audit/                            # 新增：AuditWriter/AuditConsumer/审计查询
-  rules/                            # 新增：RuleEngine 通用实现
-  prompts/                          # 新增：Prompt 模板加载与构建
-  knowledge/                        # 新增：知识库检索抽象
-  adapters/claude-code/             # 新增：对 Claude Code 现有模块的二次封装
-  query.ts                          # 二次开发复用：模型流与 ToolLoop 基础能力
-  QueryEngine.ts                    # 二次开发复用：服务化改造
-  bootstrap/state.ts                # 保留但 Runtime 禁止依赖
-  main.tsx                          # 保留：CLI commander
-  screens/                          # 保留：CLI/Ink，不进入 Runtime
-  components/                       # 保留：CLI/Ink，不进入 Runtime
-
-packages/
-  builtin-tools/                    # 复用：通用工具集，必要时加 ctx adapter
-  industry-adapter/                 # 新增：行业 Adapter workspace 包
-  mcp-client/                       # 复用：MCP 客户端
-  mcp-server/                       # 复用：MCP 服务端
-  remote-control-server/            # 独立保留：不作为行业 Runtime 主路径
+.
+├── src/
+│   ├── entrypoints/
+│   │   ├── cli.tsx                                      # [保留不用] Claude Code CLI 原入口
+│   │   ├── init.ts                                      # [保留不用] CLI 初始化路径
+│   │   └── server.ts                                    # [新增] IndustryGateway HTTP/SSE 服务入口
+│   │
+│   ├── server/                                          # [新增] 对外 API 服务层
+│   │   ├── http/
+│   │   │   ├── createServer.ts                          # [新增] Fastify/Express 初始化
+│   │   │   ├── routes/
+│   │   │   │   ├── sessions.ts                          # [新增] /api/v1/sessions
+│   │   │   │   ├── messages.ts                          # [新增] /api/v1/sessions/:id/messages
+│   │   │   │   ├── confirms.ts                          # [新增] /api/v1/sessions/:id/confirm
+│   │   │   │   ├── audit.ts                             # [新增] /api/v1/audit/*
+│   │   │   │   ├── rules.ts                             # [新增] /api/v1/rules/*
+│   │   │   │   ├── prompts.ts                           # [新增] /api/v1/prompts/*
+│   │   │   │   └── industries.ts                        # [新增] /api/v1/industries/*
+│   │   │   └── middleware/
+│   │   │       ├── auth.ts                              # [新增] 鉴权
+│   │   │       ├── tenant.ts                            # [新增] 租户解析
+│   │   │       ├── idempotency.ts                       # [新增] 幂等键
+│   │   │       └── errors.ts                            # [新增] ApiErrorResponse
+│   │   ├── sse/
+│   │   │   ├── SseConnectionRegistry.ts                 # [新增] SSE 连接索引
+│   │   │   ├── SseEventWriter.ts                        # [新增] 标准事件写入
+│   │   │   └── replayFromAudit.ts                       # [新增] Last-Event-ID 补发
+│   │   └── schemas/
+│   │       ├── api.ts                                   # [新增] API request/response schema
+│   │       └── errors.ts                                # [新增] 标准错误码 schema
+│   │
+│   ├── runtime/                                         # [新增] 行业 Agent Runtime 主干
+│   │   ├── context/
+│   │   │   ├── SessionContext.ts                        # [新增] 运行时上下文对象
+│   │   │   ├── ContextEnvelope.ts                       # [新增] 可序列化上下文快照
+│   │   │   └── ContextEnvelopeBuilder.ts                # [新增] envelope 构建器
+│   │   ├── engine/
+│   │   │   ├── AgentRuntime.ts                          # [新增] Runtime 编排入口
+│   │   │   ├── QueryRuntime.ts                          # [新增] QueryEngine 服务化 facade
+│   │   │   ├── PlanningEngine.ts                        # [新增] 计划生成与持久化
+│   │   │   ├── ToolLoop.ts                              # [二次开发] 基于 Claude Code ToolLoop 改造
+│   │   │   ├── StreamingDispatcher.ts                   # [新增] SSE 事件分发
+│   │   │   ├── MemoryManager.ts                         # [新增] 记忆调度
+│   │   │   ├── CostMonitor.ts                           # [二次开发] 复用 Claude Code token/cost 统计思想
+│   │   │   └── ErrorHandler.ts                          # [新增] retry/fallback/terminate
+│   │   ├── permission/
+│   │   │   ├── PermissionGate.ts                        # [二次开发] 基于 Claude Code 权限模型服务化
+│   │   │   └── HumanConfirmManager.ts                   # [新增] 挂起、恢复、超时、升级
+│   │   ├── state/
+│   │   │   ├── SessionStateStore.ts                     # [新增] Redis-backed session state
+│   │   │   ├── TaskStateStore.ts                        # [新增] Redis-backed task state
+│   │   │   └── CheckpointStore.ts                       # [新增] 断点续跑
+│   │   └── types.ts                                     # [新增] Runtime 内部公共类型
+│   │
+│   ├── adapters/
+│   │   └── claude-code/                                 # [新增] Claude Code 二次封装层
+│   │       ├── ClaudeQueryAdapter.ts                    # [二次开发] 包装 query()/QueryEngine
+│   │       ├── ClaudeToolAdapter.ts                     # [二次开发] Tool 与 Runtime Tool/BizTool 适配
+│   │       ├── ClaudePermissionAdapter.ts               # [二次开发] 权限类型接入 PermissionGate
+│   │       ├── ClaudeProviderAdapter.ts                 # [直接复用] provider selection 封装
+│   │       ├── ClaudeMcpAdapter.ts                      # [直接复用] MCP client/server 封装
+│   │       └── ClaudeCostAdapter.ts                     # [二次开发] token/cost 统计封装
+│   │
+│   ├── persistence/                                     # [新增] PostgreSQL/Redis/Milvus 访问层
+│   │   ├── db/
+│   │   │   ├── client.ts                                # [新增] PostgreSQL 连接
+│   │   │   ├── migrations/                              # [新增] SQL migration
+│   │   │   └── repositories/
+│   │   │       ├── SessionRepository.ts                 # [新增]
+│   │   │       ├── TaskRepository.ts                    # [新增]
+│   │   │       ├── MessageRepository.ts                 # [新增]
+│   │   │       ├── ToolCallRepository.ts                # [新增]
+│   │   │       ├── HumanConfirmRepository.ts            # [新增]
+│   │   │       ├── AuditRepository.ts                   # [新增]
+│   │   │       ├── MemoryRepository.ts                  # [新增]
+│   │   │       ├── RuleRepository.ts                    # [新增]
+│   │   │       ├── PromptRepository.ts                  # [新增]
+│   │   │       ├── KnowledgeRepository.ts               # [新增]
+│   │   │       └── IndustryAdapterRepository.ts         # [新增]
+│   │   ├── redis/
+│   │   │   ├── client.ts                                # [新增] Redis 连接
+│   │   │   ├── SessionStore.ts                          # [新增]
+│   │   │   ├── TaskStore.ts                             # [新增]
+│   │   │   ├── AuditStream.ts                           # [新增]
+│   │   │   ├── IdempotencyStore.ts                      # [新增]
+│   │   │   ├── RuleCache.ts                             # [新增]
+│   │   │   └── ShortMemoryStore.ts                      # [新增]
+│   │   └── vector/
+│   │       ├── MilvusClient.ts                          # [新增]
+│   │       └── KnowledgeVectorStore.ts                  # [新增]
+│   │
+│   ├── audit/                                           # [新增] 审计横切模块
+│   │   ├── AuditWriter.ts                               # [新增] 写 Redis Stream
+│   │   ├── AuditConsumer.ts                             # [新增] 消费 Stream 落 PostgreSQL
+│   │   ├── AuditSequence.ts                             # [新增] trace 内 sequence 分配
+│   │   ├── AuditRedactor.ts                             # [新增] 脱敏
+│   │   ├── AuditReplayBuilder.ts                        # [新增] replay 视图构建
+│   │   ├── AuditTraceSummaryProjector.ts                # [新增] trace summary 物化
+│   │   └── types.ts                                     # [新增]
+│   │
+│   ├── rules/                                           # [新增] 通用规则引擎
+│   │   ├── RuleEngine.ts                                # [新增]
+│   │   ├── RuleEvaluator.ts                             # [新增]
+│   │   ├── RuleVersionResolver.ts                       # [新增]
+│   │   └── types.ts                                     # [新增]
+│   │
+│   ├── prompts/                                         # [新增] Prompt 构建与版本加载
+│   │   ├── PromptTemplateStore.ts                       # [新增]
+│   │   ├── buildSystemPrompt.ts                         # [新增]
+│   │   ├── buildUserMessage.ts                          # [新增]
+│   │   ├── buildTools.ts                                # [二次开发] 复用 Claude Code tools schema
+│   │   └── types.ts                                     # [新增]
+│   │
+│   ├── knowledge/                                       # [新增] 知识库检索抽象
+│   │   ├── KnowledgeQueryTool.ts                        # [新增] Runtime tool
+│   │   ├── KnowledgeIndexer.ts                          # [新增]
+│   │   ├── KnowledgeRetriever.ts                        # [新增]
+│   │   └── types.ts                                     # [新增]
+│   │
+│   ├── query.ts                                         # [二次开发] 保留模型流能力，移除单例依赖
+│   ├── QueryEngine.ts                                   # [二次开发] 服务化改造，接收 SessionContext
+│   ├── Tool.ts                                          # [直接复用] Tool 类型基础
+│   ├── tools.ts                                         # [二次开发] 通过 adapter 注入 Runtime tools
+│   ├── services/api/                                    # [直接复用] Anthropic/OpenAI/Gemini/Grok provider
+│   ├── services/mcp/                                    # [直接复用] MCP 相关服务
+│   ├── utils/model/                                     # [直接复用] provider/model 选择
+│   ├── bootstrap/state.ts                               # [保留不用] CLI 兼容，Runtime 禁止依赖
+│   ├── main.tsx                                         # [保留不用] CLI commander
+│   ├── screens/                                         # [保留不用] Ink REPL UI
+│   ├── components/                                      # [保留不用] Ink 组件
+│   ├── ink.ts                                           # [保留不用] Ink render wrapper
+│   ├── bridge/                                          # [参考] Remote Control/Bridge，可参考通信模式
+│   ├── daemon/                                          # [参考] 长驻进程模式，可参考 worker 管理
+│   └── services/acp/                                    # [参考] ACP agent，可参考协议接入
+│
+├── packages/
+│   ├── builtin-tools/                                   # [直接复用] 内置工具集，必要时加 Runtime adapter
+│   │   └── src/tools/                                   # [直接复用] File/Bash/Web/MCP/Agent 等工具
+│   ├── industry-adapter/                                # [新增] 行业 Adapter workspace 包
+│   │   ├── src/
+│   │   │   ├── types.ts                                 # [新增] IndustryAdapter/SemanticMapper/BizRefBuilder
+│   │   │   ├── registry.ts                              # [新增] IndustryRegistry
+│   │   │   ├── pipeline.ts                              # [新增] Adapter pipeline
+│   │   │   └── base/
+│   │   │       ├── BaseSemanticMapper.ts                # [新增]
+│   │   │       ├── BaseBizRefBuilder.ts                 # [新增]
+│   │   │       └── BaseCapabilityGateway.ts             # [新增]
+│   │   └── industries/
+│   │       ├── library/
+│   │       │   ├── index.ts                             # [新增]
+│   │       │   ├── SemanticMapper.ts                    # [新增]
+│   │       │   ├── BizRefBuilder.ts                     # [新增]
+│   │       │   ├── CapabilityGateway.ts                 # [新增]
+│   │       │   ├── tools/                               # [新增] 图书馆 BizTools
+│   │       │   ├── skills/                              # [新增] 图书馆 BizSkills
+│   │       │   ├── workflows/                           # [新增] 图书馆 BizWorkflows
+│   │       │   ├── rules/                               # [新增] 图书馆规则源文件
+│   │       │   └── prompts/                             # [新增] 图书馆 Prompt 模板
+│   │       ├── tobacco/                                 # [新增] 第二行业验证实现
+│   │       └── water/                                   # [新增] 第三行业验证实现
+│   ├── mcp-client/                                      # [直接复用] MCP 客户端库
+│   ├── mcp-server/                                      # [直接复用] MCP 服务端库
+│   ├── @ant/ink/                                        # [保留不用] CLI UI 框架
+│   ├── @ant/computer-use-mcp/                           # [直接复用] 如行业场景需要桌面控制
+│   ├── acp-link/                                        # [参考] ACP WebSocket 桥接
+│   ├── remote-control-server/                           # [参考] 可参考 Web UI/服务部署，不作为主入口
+│   └── */                                               # [按需评估] 其他包逐个判断复用边界
+│
+├── docs/
+│   ├── superpowers/specs/                               # [新增/维护] Runtime 主规格与实施计划
+│   └── indus-agent/                                     # [参考] 行业架构 PDF 和任务规划原始资料
+│
+├── tests/
+│   ├── runtime/                                         # [新增] Runtime 单元/集成测试
+│   ├── server/                                          # [新增] API/SSE 契约测试
+│   ├── audit/                                           # [新增] 审计链路测试
+│   ├── industry-adapter/                                # [新增] 行业 Adapter 测试
+│   └── integration/                                     # [二次开发] 扩展现有集成测试
+│
+└── scripts/
+    ├── defines.ts                                      # [二次开发] 如需新增 SERVER/RUNTIME feature flags
+    └── dev.ts                                          # [保留不用] CLI dev；server dev 另建脚本
 ```
 
-#### 14.12.2 新增 Runtime 目录
-
-```text
-src/runtime/
-  context/
-    SessionContext.ts               # 运行时上下文对象
-    ContextEnvelope.ts              # 可序列化上下文快照
-    ContextEnvelopeBuilder.ts       # 从 request/adapter/tool result 构建 envelope
-  engine/
-    AgentRuntime.ts                 # Runtime 编排入口
-    QueryRuntime.ts                 # QueryEngine 服务化封装
-    PlanningEngine.ts               # 计划生成与持久化
-    ToolLoop.ts                     # 服务端 ToolLoop
-    StreamingDispatcher.ts          # SSE 事件分发
-    MemoryManager.ts                # 记忆调度
-    CostMonitor.ts                  # token/cost 统计
-    ErrorHandler.ts                 # retry/fallback/terminate
-  permission/
-    PermissionGate.ts               # 权限判定
-    HumanConfirmManager.ts          # 挂起、恢复、超时、升级
-  state/
-    SessionStateStore.ts            # Redis-backed session state
-    TaskStateStore.ts               # Redis-backed task state
-    CheckpointStore.ts              # 断点续跑
-  types.ts                          # Runtime 内部公共类型
-```
-
-`src/runtime` 不允许 import `src/screens/*`、`src/components/*`、`src/main.tsx`。需要复用 Claude Code 能力时，只能通过 `src/adapters/claude-code/*`。
-
-#### 14.12.3 新增服务入口目录
-
-```text
-src/server/
-  http/
-    createServer.ts                 # Fastify/Express 初始化
-    routes/
-      sessions.ts                   # /api/v1/sessions
-      messages.ts                   # /api/v1/sessions/:id/messages
-      confirms.ts                   # /api/v1/sessions/:id/confirm
-      audit.ts                      # /api/v1/audit/*
-      rules.ts                      # /api/v1/rules/*
-      prompts.ts                    # /api/v1/prompts/*
-      industries.ts                 # /api/v1/industries/*
-    middleware/
-      auth.ts                       # 鉴权
-      tenant.ts                     # 租户解析
-      idempotency.ts                # 幂等键
-      errors.ts                     # ApiErrorResponse
-  sse/
-    SseConnectionRegistry.ts        # SSE 连接索引
-    SseEventWriter.ts               # 标准事件写入
-    replayFromAudit.ts              # Last-Event-ID 补发
-  schemas/
-    api.ts                          # API request/response schema
-    errors.ts                       # 错误码 schema
-```
-
-`src/entrypoints/server.ts` 只负责加载配置、初始化依赖、启动 `src/server/http/createServer.ts`，不得包含业务逻辑。
-
-#### 14.12.4 新增持久化目录
-
-```text
-src/persistence/
-  db/
-    client.ts                       # PostgreSQL 连接
-    migrations/                     # SQL migration
-    repositories/
-      SessionRepository.ts
-      TaskRepository.ts
-      MessageRepository.ts
-      ToolCallRepository.ts
-      HumanConfirmRepository.ts
-      AuditRepository.ts
-      MemoryRepository.ts
-      RuleRepository.ts
-      PromptRepository.ts
-      KnowledgeRepository.ts
-      IndustryAdapterRepository.ts
-  redis/
-    client.ts
-    SessionStore.ts
-    TaskStore.ts
-    AuditStream.ts
-    IdempotencyStore.ts
-    RuleCache.ts
-    ShortMemoryStore.ts
-  vector/
-    MilvusClient.ts
-    KnowledgeVectorStore.ts
-```
-
-Repository 层只暴露结构化方法，不把 SQL 拼接散落到 Runtime 逻辑中。Redis Store 只承载热状态和队列，不作为长期审计查询源。
-
-#### 14.12.5 新增审计目录
-
-```text
-src/audit/
-  AuditWriter.ts                    # 写 Redis Stream
-  AuditConsumer.ts                  # 消费 Stream 落 PostgreSQL
-  AuditSequence.ts                  # trace 内 sequence 分配
-  AuditRedactor.ts                  # 脱敏
-  AuditReplayBuilder.ts             # replay 视图构建
-  AuditTraceSummaryProjector.ts     # trace summary 物化
-  types.ts
-```
-
-审计模块是横切能力，但不反向依赖具体行业 Adapter。行业信息通过 `AuditEvent.payload` 和 `ContextEnvelope` 进入审计链。
-
-#### 14.12.6 新增行业 Adapter 包
-
-```text
-packages/industry-adapter/
-  src/
-    types.ts                        # IndustryAdapter/SemanticMapper/BizRefBuilder
-    registry.ts                     # IndustryRegistry
-    pipeline.ts                     # Adapter pipeline
-    base/
-      BaseSemanticMapper.ts
-      BaseBizRefBuilder.ts
-      BaseCapabilityGateway.ts
-  industries/
-    library/
-      index.ts
-      SemanticMapper.ts
-      BizRefBuilder.ts
-      CapabilityGateway.ts
-      tools/
-      skills/
-      workflows/
-      rules/
-      prompts/
-    tobacco/
-      index.ts
-    water/
-      index.ts
-```
-
-行业包可以依赖 Runtime 暴露的稳定类型，但 Runtime 主干不得 import 某个具体行业实现。加载必须通过 `IndustryRegistry.load(industryCode)`。
-
-#### 14.12.7 Claude Code 二次封装目录
-
-```text
-src/adapters/claude-code/
-  ClaudeQueryAdapter.ts             # 包装 query()/QueryEngine
-  ClaudeToolAdapter.ts              # Tool 接口与 BizTool/Runtime Tool 适配
-  ClaudePermissionAdapter.ts        # 复用权限类型，接入 PermissionGate
-  ClaudeProviderAdapter.ts          # 复用 provider selection
-  ClaudeMcpAdapter.ts               # 复用 MCP client/server
-  ClaudeCostAdapter.ts              # 复用 token/cost 统计
-```
-
-封装原则：
+#### 14.12.3 Claude Code 封装原则
 
 - Runtime 只依赖 adapter 输出的稳定接口，不直接依赖 Claude Code 内部易变实现。
 - 原 Claude Code 模块如果需要修改，优先做参数化和依赖注入，不把行业概念写进通用模块。
 - 所有对 `bootstrap/state.ts` 的旧调用必须被 adapter 层截断，改为从 `SessionContext` 读取。
+- `src/entrypoints/server.ts` 只负责加载配置、初始化依赖、启动 `src/server/http/createServer.ts`，不得包含业务逻辑。
+- `src/runtime` 不允许 import `src/screens/*`、`src/components/*`、`src/main.tsx`。需要复用 Claude Code 能力时，只能通过 `src/adapters/claude-code/*`。
+- Repository 层只暴露结构化方法，不把 SQL 拼接散落到 Runtime 逻辑中。
+- Redis Store 只承载热状态和队列，不作为长期审计查询源。
+- 审计模块是横切能力，但不反向依赖具体行业 Adapter。行业信息通过 `AuditEvent.payload` 和 `ContextEnvelope` 进入审计链。
+- 行业包可以依赖 Runtime 暴露的稳定类型，但 Runtime 主干不得 import 某个具体行业实现。加载必须通过 `IndustryRegistry.load(industryCode)`。
 
-#### 14.12.8 保留、复用、二次开发、自研边界
+#### 14.12.4 保留、复用、二次开发、自研边界
 
 | 区域 | 策略 | 说明 |
 |-----|-----|-----|
@@ -2137,7 +2160,7 @@ src/adapters/claude-code/
 | `src/runtime`, `src/server`, `src/persistence`, `src/audit` | 自研 | 行业 Runtime 后端主干 |
 | `packages/industry-adapter` | 自研 | 行业差异隔离层 |
 
-#### 14.12.9 依赖方向规则
+#### 14.12.5 依赖方向规则
 
 允许依赖：
 
@@ -2159,7 +2182,7 @@ persistence repositories → runtime engine
 audit → concrete industry implementations
 ```
 
-#### 14.12.10 目录结构验收标准
+#### 14.12.6 目录结构验收标准
 
 - `src/entrypoints/server.ts` 可独立启动，不加载 Ink/REPL 组件。
 - Runtime 核心代码 import 图中不得出现 `src/screens`、`src/components`、`src/main.tsx`。
