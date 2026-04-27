@@ -1,4 +1,5 @@
 import { mock, describe, test, expect, beforeEach } from 'bun:test'
+import { debugMock } from '../../../../tests/mocks/debug'
 
 // Mock @langfuse/otel before any imports
 const mockForceFlush = mock(() => Promise.resolve())
@@ -71,9 +72,7 @@ mock.module('@langfuse/tracing', () => ({
 }))
 
 // Mock debug logger
-mock.module('src/utils/debug.js', () => ({
-  logForDebugging: mock(() => {}),
-}))
+mock.module('src/utils/debug.ts', debugMock)
 
 // Mock user data — resolveLangfuseUserId uses getCoreUserData().email and .deviceId
 mock.module('src/utils/user.js', () => ({
@@ -182,6 +181,101 @@ describe('Langfuse integration', () => {
       const { sanitizeGlobal } = await import('../sanitize.js')
       expect(sanitizeGlobal(42)).toBe(42)
       expect(sanitizeGlobal(true)).toBe(true)
+    })
+  })
+
+  describe('convertMessagesToLangfuse', () => {
+    test('preserves OpenAI-style messages including deferred tool announcements', async () => {
+      const { convertMessagesToLangfuse } = await import('../convert.js')
+      const result = convertMessagesToLangfuse([
+        {
+          role: 'system',
+          content: 'system prompt',
+        },
+        {
+          role: 'user',
+          content:
+            '<available-deferred-tools>\nmcp__wechat__send_message\n</available-deferred-tools>',
+        },
+      ])
+
+      expect(result).toEqual([
+        { role: 'system', content: 'system prompt' },
+        {
+          role: 'user',
+          content:
+            '<available-deferred-tools>\nmcp__wechat__send_message\n</available-deferred-tools>',
+        },
+      ])
+    })
+
+    test('preserves roles for OpenAI-style array content messages', async () => {
+      const { convertMessagesToLangfuse } = await import('../convert.js')
+      const result = convertMessagesToLangfuse([
+        {
+          role: 'system',
+          content: [{ type: 'text', text: 'system reminder' }],
+        },
+        {
+          role: 'tool',
+          tool_call_id: 'call_1',
+          content: [{ type: 'text', text: 'tool output' }],
+        },
+      ])
+
+      expect(result).toEqual([
+        { role: 'system', content: 'system reminder' },
+        { role: 'tool', content: 'tool output', tool_call_id: 'call_1' },
+      ])
+    })
+
+    test('merges assistant tool calls from OpenAI-style array content', async () => {
+      const { convertMessagesToLangfuse } = await import('../convert.js')
+      // Content part with embedded tool_calls is non-standard; cast for defensive test
+      const result = convertMessagesToLangfuse([
+        {
+          role: 'assistant',
+          content: [
+            {
+              type: 'text',
+              text: 'calling a tool',
+              tool_calls: [
+                {
+                  id: 'call_from_part',
+                  type: 'function',
+                  function: { name: 'part_tool', arguments: '{}' },
+                },
+              ],
+            },
+          ],
+          tool_calls: [
+            {
+              id: 'call_from_message',
+              type: 'function',
+              function: { name: 'message_tool', arguments: '{"ok":true}' },
+            },
+          ],
+        },
+      ] as any)
+
+      expect(result).toEqual([
+        {
+          role: 'assistant',
+          content: 'calling a tool',
+          tool_calls: [
+            {
+              id: 'call_from_message',
+              type: 'function',
+              function: { name: 'message_tool', arguments: '{"ok":true}' },
+            },
+            {
+              id: 'call_from_part',
+              type: 'function',
+              function: { name: 'part_tool', arguments: '{}' },
+            },
+          ],
+        },
+      ])
     })
   })
 
@@ -650,6 +744,117 @@ describe('Langfuse integration', () => {
 
       expect(ownsTrace).toBe(false)
       expect(langfuseTrace).toBe(subTrace)
+    })
+  })
+
+  describe('convertToolsToLangfuse', () => {
+    test('converts Anthropic tool schema to OpenAI-style format', async () => {
+      const { convertToolsToLangfuse } = await import('../convert.js')
+      const tools = [
+        {
+          name: 'BashTool',
+          description: 'Execute a bash command',
+          input_schema: {
+            type: 'object',
+            properties: { command: { type: 'string' } },
+            required: ['command'],
+          },
+        },
+      ]
+      const result = convertToolsToLangfuse(tools) as Array<Record<string, unknown>>
+      expect(result).toHaveLength(1)
+      expect(result[0]).toEqual({
+        type: 'function',
+        function: {
+          name: 'BashTool',
+          description: 'Execute a bash command',
+          parameters: {
+            type: 'object',
+            properties: { command: { type: 'string' } },
+            required: ['command'],
+          },
+        },
+      })
+    })
+
+    test('converts multiple tools', async () => {
+      const { convertToolsToLangfuse } = await import('../convert.js')
+      const tools = [
+        { name: 'ReadTool', description: 'Read a file', input_schema: { type: 'object' } },
+        { name: 'WriteTool', description: 'Write a file', input_schema: { type: 'object' } },
+      ]
+      const result = convertToolsToLangfuse(tools) as Array<Record<string, unknown>>
+      expect(result).toHaveLength(2)
+      expect((result[0]!.function as Record<string, unknown>).name).toBe('ReadTool')
+      expect((result[1]!.function as Record<string, unknown>).name).toBe('WriteTool')
+    })
+
+    test('falls back to parameters when input_schema is missing', async () => {
+      const { convertToolsToLangfuse } = await import('../convert.js')
+      const tools = [
+        { name: 'Tool1', description: 'desc', parameters: { type: 'object', properties: { a: { type: 'string' } } } },
+      ]
+      const result = convertToolsToLangfuse(tools) as Array<Record<string, unknown>>
+      expect((result[0]!.function as Record<string, unknown>).parameters).toEqual({
+        type: 'object',
+        properties: { a: { type: 'string' } },
+      })
+    })
+
+    test('uses empty object when neither input_schema nor parameters exist', async () => {
+      const { convertToolsToLangfuse } = await import('../convert.js')
+      const tools = [{ name: 'Tool1', description: 'desc' }]
+      const result = convertToolsToLangfuse(tools) as Array<Record<string, unknown>>
+      expect((result[0]!.function as Record<string, unknown>).parameters).toEqual({})
+    })
+
+    test('returns empty array for empty input', async () => {
+      const { convertToolsToLangfuse } = await import('../convert.js')
+      expect(convertToolsToLangfuse([])).toEqual([])
+    })
+  })
+
+  describe('recordLLMObservation with tools', () => {
+    test('wraps input into { messages, tools } when tools provided', async () => {
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-test'
+      process.env.LANGFUSE_SECRET_KEY = 'sk-test'
+      const { createTrace, recordLLMObservation } = await import('../tracing.js')
+      const span = createTrace({ sessionId: 's1', model: 'claude-3', provider: 'firstParty' })
+      mockStartObservation.mockClear()
+      const messages = [{ role: 'user', content: 'hello' }]
+      const tools = [{ type: 'function', function: { name: 'Bash', description: 'Run', parameters: {} } }]
+      recordLLMObservation(span, {
+        model: 'claude-3',
+        provider: 'firstParty',
+        input: messages,
+        output: [],
+        usage: { input_tokens: 10, output_tokens: 5 },
+        tools,
+      })
+      expect(mockStartObservation).toHaveBeenCalledWith('ChatAnthropic', expect.objectContaining({
+        input: { messages, tools },
+      }), expect.objectContaining({
+        asType: 'generation',
+      }))
+    })
+
+    test('keeps input as-is when tools not provided', async () => {
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-test'
+      process.env.LANGFUSE_SECRET_KEY = 'sk-test'
+      const { createTrace, recordLLMObservation } = await import('../tracing.js')
+      const span = createTrace({ sessionId: 's1', model: 'claude-3', provider: 'firstParty' })
+      mockStartObservation.mockClear()
+      const messages = [{ role: 'user', content: 'hello' }]
+      recordLLMObservation(span, {
+        model: 'claude-3',
+        provider: 'firstParty',
+        input: messages,
+        output: [],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      })
+      expect(mockStartObservation).toHaveBeenCalledWith('ChatAnthropic', expect.objectContaining({
+        input: messages,
+      }), expect.any(Object))
     })
   })
 

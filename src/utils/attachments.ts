@@ -536,9 +536,25 @@ export type Attachment =
     }
   | {
       type: 'skill_discovery'
-      skills: { name: string; description: string; shortId?: string }[]
+      skills: {
+        name: string
+        description: string
+        shortId?: string
+        score?: number
+        autoLoaded?: boolean
+        content?: string
+        path?: string
+      }[]
       signal: DiscoverySignal
       source: 'native' | 'aki' | 'both'
+      gap?: {
+        key: string
+        status: 'pending' | 'draft' | 'active'
+        draftName?: string
+        draftPath?: string
+        activeName?: string
+        activePath?: string
+      }
     }
   | {
       type: 'queued_command'
@@ -803,6 +819,10 @@ export async function getAttachments(
         !options?.skipSkillDiscovery
           ? [
               maybe('skill_discovery', async () => {
+                if (suppressNextDiscovery) {
+                  suppressNextDiscovery = false
+                  return []
+                }
                 const result = await skillSearchModules.prefetch.getTurnZeroSkillDiscovery(
                   input,
                   messages ?? [],
@@ -2201,6 +2221,7 @@ async function getRelevantMemoryAttachments(
   recentTools: readonly string[],
   signal: AbortSignal,
   alreadySurfaced: ReadonlySet<string>,
+  parentSpan?: unknown,
 ): Promise<Attachment[]> {
   // If an agent is @-mentioned, search only its memory dir (isolation).
   // Otherwise search the auto-memory dir.
@@ -2221,6 +2242,7 @@ async function getRelevantMemoryAttachments(
         signal,
         recentTools,
         alreadySurfaced,
+        parentSpan as Parameters<typeof findRelevantMemories>[5],
       ).catch(() => []),
     ),
   )
@@ -2370,6 +2392,12 @@ export function startRelevantMemoryPrefetch(
     return undefined
   }
 
+  // Poor mode: skip the side-query to save tokens
+  const { isPoorModeActive } = require('../commands/poor/poorMode.js') as typeof import('../commands/poor/poorMode.js')
+  if (isPoorModeActive()) {
+    return undefined
+  }
+
   const lastUserMessage = messages.findLast(m => m.type === 'user' && !m.isMeta)
   if (!lastUserMessage) {
     return undefined
@@ -2397,6 +2425,7 @@ export function startRelevantMemoryPrefetch(
     collectRecentSuccessfulTools(messages, lastUserMessage),
     controller.signal,
     surfaced.paths,
+    toolUseContext.langfuseTrace,
   ).catch(e => {
     if (!isAbortError(e)) {
       logError(e)
@@ -2613,6 +2642,7 @@ const sentSkillNames = new Map<string, Set<string>>()
 export function resetSentSkillNames(): void {
   sentSkillNames.clear()
   suppressNext = false
+  suppressNextDiscovery = false
 }
 
 /**
@@ -2635,6 +2665,18 @@ export function suppressNextSkillListing(): void {
   suppressNext = true
 }
 let suppressNext = false
+
+/**
+ * Suppress the next skill-discovery injection on resume. Same rationale as
+ * suppressNextSkillListing: skill_discovery attachments are not persisted to
+ * transcript for non-ant users, so the prior process's discovery result is
+ * already in the conversation history the model sees. Re-generating it would
+ * inject duplicate content and bust the prompt cache prefix.
+ */
+export function suppressNextSkillDiscovery(): void {
+  suppressNextDiscovery = true
+}
+let suppressNextDiscovery = false
 
 // When skill-search is enabled and the filtered (bundled + MCP) listing exceeds
 // this count, fall back to bundled-only. Protects MCP-heavy users (100+ servers)

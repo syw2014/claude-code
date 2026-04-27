@@ -14,18 +14,27 @@ import { dirname, join } from 'path';
 import { tmpdir } from 'os';
 import figures from 'figures';
 // eslint-disable-next-line custom-rules/prefer-use-keybindings -- / n N Esc [ v are bare letters in transcript modal context, same class as g/G/j/k in ScrollKeybindingHandler
-import { useInput } from '@anthropic/ink'
-import { useSearchInput } from '../hooks/useSearchInput.js'
-import { useTerminalSize } from '../hooks/useTerminalSize.js'
-import { useSearchHighlight } from '@anthropic/ink'
-import type { JumpHandle } from '../components/VirtualMessageList.js'
-import { renderMessagesToPlainText } from '../utils/exportRenderer.js'
-import { openFileInExternalEditor } from '../utils/editor.js'
-import { writeFile } from 'fs/promises'
-import { type TabStatusKind, Box, Text, useStdin, useTheme, useTerminalFocus, useTerminalTitle, useTabStatus } from '@anthropic/ink'
-import { CostThresholdDialog } from '../components/CostThresholdDialog.js'
-import { IdleReturnDialog } from '../components/IdleReturnDialog.js'
-import * as React from 'react'
+import { useInput } from '@anthropic/ink';
+import { useSearchInput } from '../hooks/useSearchInput.js';
+import { useTerminalSize } from '../hooks/useTerminalSize.js';
+import { useSearchHighlight } from '@anthropic/ink';
+import type { JumpHandle } from '../components/VirtualMessageList.js';
+import { renderMessagesToPlainText } from '../utils/exportRenderer.js';
+import { openFileInExternalEditor } from '../utils/editor.js';
+import { writeFile } from 'fs/promises';
+import {
+  type TabStatusKind,
+  Box,
+  Text,
+  useStdin,
+  useTheme,
+  useTerminalFocus,
+  useTerminalTitle,
+  useTabStatus,
+} from '@anthropic/ink';
+import { CostThresholdDialog } from '../components/CostThresholdDialog.js';
+import { IdleReturnDialog } from '../components/IdleReturnDialog.js';
+import * as React from 'react';
 import {
   useEffect,
   useMemo,
@@ -35,14 +44,11 @@ import {
   useDeferredValue,
   useLayoutEffect,
   type RefObject,
-} from 'react'
-import { useNotifications } from '../context/notifications.js'
-import { sendNotification } from '../services/notifier.js'
-import {
-  startPreventSleep,
-  stopPreventSleep,
-} from '../services/preventSleep.js'
-import { useTerminalNotification, hasCursorUpViewportYankBug } from '@anthropic/ink'
+} from 'react';
+import { useNotifications } from '../context/notifications.js';
+import { sendNotification } from '../services/notifier.js';
+import { startPreventSleep, stopPreventSleep } from '../services/preventSleep.js';
+import { useTerminalNotification, hasCursorUpViewportYankBug } from '@anthropic/ink';
 import {
   createFileStateCacheWithSizeLimit,
   mergeFileStateCaches,
@@ -72,6 +78,11 @@ import { QueryGuard } from '../utils/QueryGuard.js';
 import { isEnvTruthy } from '../utils/envUtils.js';
 import { formatTokens, truncateToWidth } from '../utils/format.js';
 import { consumeEarlyInput } from '../utils/earlyInput.js';
+import {
+  finalizeAutonomyRunCompleted,
+  finalizeAutonomyRunFailed,
+  markAutonomyRunRunning,
+} from '../utils/autonomyRuns.js';
 
 import { setMemberActive } from '../utils/swarm/teamHelpers.js';
 import {
@@ -155,9 +166,10 @@ import { CancelRequestHandler } from '../hooks/useCancelRequest.js';
 import { useBackgroundTaskNavigation } from '../hooks/useBackgroundTaskNavigation.js';
 import { useSwarmInitialization } from '../hooks/useSwarmInitialization.js';
 import { useTeammateViewAutoExit } from '../hooks/useTeammateViewAutoExit.js';
-import { errorMessage } from '../utils/errors.js';
+import { errorMessage, toError } from '../utils/errors.js';
 import { isHumanTurn } from '../utils/messagePredicates.js';
 import { logError } from '../utils/log.js';
+import { getCwd } from '../utils/cwd.js';
 // Dead code elimination: conditional imports
 /* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
 const useVoiceIntegration: typeof import('../hooks/useVoiceIntegration.js').useVoiceIntegration = feature('VOICE_MODE')
@@ -195,6 +207,7 @@ const getCoordinatorUserContext: (
 /* eslint-enable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
 import useCanUseTool from '../hooks/useCanUseTool.js';
 import type { ToolPermissionContext, Tool } from '../Tool.js';
+import { notifyAutomationStateChanged } from '../utils/sessionState.js';
 import {
   applyPermissionUpdate,
   applyPermissionUpdates,
@@ -329,6 +342,7 @@ import { useInboxPoller } from '../hooks/useInboxPoller.js';
 const proactiveModule = feature('PROACTIVE') || feature('KAIROS') ? require('../proactive/index.js') : null;
 const PROACTIVE_NO_OP_SUBSCRIBE = (_cb: () => void) => () => {};
 const PROACTIVE_FALSE = () => false;
+const PROACTIVE_NULL = (): number | null => null;
 const SUGGEST_BG_PR_NOOP = (_p: string, _n: string): boolean => false;
 const useProactive =
   feature('PROACTIVE') || feature('KAIROS') ? require('../proactive/useProactive.js').useProactive : null;
@@ -346,6 +360,7 @@ const usePipeRelay = feature('UDS_INBOX')
 const usePipePermissionForward = feature('UDS_INBOX')
   ? require('../hooks/usePipePermissionForward.js').usePipePermissionForward
   : () => undefined;
+const usePipeMuteSync = feature('UDS_INBOX') ? require('../hooks/usePipeMuteSync.js').usePipeMuteSync : () => undefined;
 const usePipeRouter = feature('UDS_INBOX')
   ? require('../hooks/usePipeRouter.js').usePipeRouter
   : () => ({ routeToSelectedPipes: () => false });
@@ -407,9 +422,7 @@ import { usePromptsFromClaudeInChrome } from 'src/hooks/usePromptsFromClaudeInCh
 import { getTipToShowOnSpinner, recordShownTip } from 'src/services/tips/tipScheduler.js';
 import type { Theme } from 'src/utils/theme.js';
 import {
-  checkAndDisableBypassPermissionsIfNeeded,
   checkAndDisableAutoModeIfNeeded,
-  useKickOffCheckAndDisableBypassPermissionsIfNeeded,
   useKickOffCheckAndDisableAutoModeIfNeeded,
 } from 'src/utils/permissions/bypassPermissionsKillswitch.js';
 import { SandboxManager } from 'src/utils/sandbox/sandbox-adapter.js';
@@ -419,7 +432,6 @@ import { SandboxPermissionRequest } from 'src/components/permissions/SandboxPerm
 import { SandboxViolationExpandedView } from 'src/components/SandboxViolationExpandedView.js';
 import { useSettingsErrors } from 'src/hooks/notifs/useSettingsErrors.js';
 import { useMcpConnectivityStatus } from 'src/hooks/notifs/useMcpConnectivityStatus.js';
-import { useAutoModeUnavailableNotification } from 'src/hooks/notifs/useAutoModeUnavailableNotification.js';
 import { AUTO_MODE_DESCRIPTION } from 'src/components/AutoModeOptInDialog.js';
 import { useLspInitializationNotification } from 'src/hooks/notifs/useLspInitializationNotification.js';
 import { useLspPluginRecommendation } from 'src/hooks/useLspPluginRecommendation.js';
@@ -452,11 +464,8 @@ import {
 } from '../utils/autoRunIssue.js';
 import type { HookProgress } from '../types/hooks.js';
 import { TungstenLiveMonitor } from '@claude-code-best/builtin-tools/tools/TungstenTool/TungstenLiveMonitor.js';
-/* eslint-disable @typescript-eslint/no-require-imports */
-const WebBrowserPanelModule = feature('WEB_BROWSER_TOOL')
-  ? (require('@claude-code-best/builtin-tools/tools/WebBrowserTool/WebBrowserPanel.js') as typeof import('@claude-code-best/builtin-tools/tools/WebBrowserTool/WebBrowserPanel.js'))
-  : null;
-/* eslint-enable @typescript-eslint/no-require-imports */
+// WebBrowserPanel removed — browser-lite returns results inline via tool_result.
+// For full browser interaction use Claude-in-Chrome MCP tools.
 import { IssueFlagBanner } from '../components/PromptInput/IssueFlagBanner.js';
 import { useIssueFlagBanner } from '../hooks/useIssueFlagBanner.js';
 import { CompanionSprite, CompanionFloatingBubble, MIN_COLS_FOR_FULL_SPRITE } from '../buddy/CompanionSprite.js';
@@ -465,21 +474,13 @@ import { UltraplanChoiceDialog } from '../components/ultraplan/UltraplanChoiceDi
 import { UltraplanLaunchDialog } from '../components/ultraplan/UltraplanLaunchDialog.js';
 import { launchUltraplan } from '../commands/ultraplan.js';
 // Session manager removed - using AppState now
-import type { RemoteSessionConfig } from '../remote/RemoteSessionManager.js'
-import { REMOTE_SAFE_COMMANDS } from '../commands.js'
-import type { RemoteMessageContent } from '../utils/teleport/api.js'
-import {
-  FullscreenLayout,
-  useUnseenDivider,
-  computeUnseenDivider,
-} from '../components/FullscreenLayout.js'
-import {
-  isFullscreenEnvEnabled,
-  maybeGetTmuxMouseHint,
-  isMouseTrackingEnabled,
-} from '../utils/fullscreen.js'
-import { AlternateScreen } from '@anthropic/ink'
-import { ScrollKeybindingHandler } from '../components/ScrollKeybindingHandler.js'
+import type { RemoteSessionConfig } from '../remote/RemoteSessionManager.js';
+import { REMOTE_SAFE_COMMANDS } from '../commands.js';
+import type { RemoteMessageContent } from '../utils/teleport/api.js';
+import { FullscreenLayout, useUnseenDivider, computeUnseenDivider } from '../components/FullscreenLayout.js';
+import { isFullscreenEnvEnabled, maybeGetTmuxMouseHint, isMouseTrackingEnabled } from '../utils/fullscreen.js';
+import { AlternateScreen } from '@anthropic/ink';
+import { ScrollKeybindingHandler } from '../components/ScrollKeybindingHandler.js';
 import {
   useMessageActions,
   MessageActionsKeybindings,
@@ -487,13 +488,10 @@ import {
   type MessageActionsState,
   type MessageActionsNav,
   type MessageActionCaps,
-} from '../components/messageActions.js'
-import { setClipboard } from '@anthropic/ink'
-import type { ScrollBoxHandle } from '@anthropic/ink'
-import {
-  createAttachmentMessage,
-  getQueuedCommandAttachments,
-} from '../utils/attachments.js'
+} from '../components/messageActions.js';
+import { setClipboard } from '@anthropic/ink';
+import type { ScrollBoxHandle } from '@anthropic/ink';
+import { createAttachmentMessage, getQueuedCommandAttachments } from '../utils/attachments.js';
 
 // Stable empty array for hooks that accept MCPServerConnection[] — avoids
 // creating a new [] literal on every render in remote mode, which would
@@ -641,6 +639,7 @@ function TranscriptSearchBar({
   const [indexStatus, setIndexStatus] = React.useState<'building' | { ms: number } | null>('building');
   React.useEffect(() => {
     let alive = true;
+    let hideTimeout: ReturnType<typeof setTimeout> | undefined;
     const warm = jumpRef.current?.warmSearchIndex;
     if (!warm) {
       setIndexStatus(null); // VML not mounted yet — rare, skip indicator
@@ -654,14 +653,14 @@ function TranscriptSearchBar({
         setIndexStatus(null);
       } else {
         setIndexStatus({ ms });
-        setTimeout(() => alive && setIndexStatus(null), 2000);
+        hideTimeout = setTimeout(() => alive && setIndexStatus(null), 2000);
       }
     });
     return () => {
       alive = false;
+      if (hideTimeout) clearTimeout(hideTimeout);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // mount-only: bar opens once per /
+  }, [jumpRef]); // mount-only per stable search bar ref
   // Gate the query effect on warm completion. setHighlight stays instant
   // (screen-space overlay, no indexing). setSearchQuery (the scan) waits.
   const warmDone = indexStatus !== 'building';
@@ -669,8 +668,7 @@ function TranscriptSearchBar({
     if (!warmDone) return;
     jumpRef.current?.setSearchQuery(query);
     setHighlight(query);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, warmDone]);
+  }, [jumpRef, query, setHighlight, warmDone]);
   const off = cursorOffset;
   const cursorChar = off < query.length ? query[off] : ' ';
   return (
@@ -926,6 +924,10 @@ export function REPL({
     proactiveModule?.subscribeToProactiveChanges ?? PROACTIVE_NO_OP_SUBSCRIBE,
     proactiveModule?.isProactiveActive ?? PROACTIVE_FALSE,
   );
+  const proactiveNextTickAt = React.useSyncExternalStore<number | null>(
+    proactiveModule?.subscribeToProactiveChanges ?? PROACTIVE_NO_OP_SUBSCRIBE,
+    proactiveModule?.getNextTickAt ?? PROACTIVE_NULL,
+  );
 
   // BriefTool.isEnabled() reads getUserMsgOptIn() from bootstrap state, which
   // /brief flips mid-session alongside isBriefOnly. The memo below needs a
@@ -940,7 +942,6 @@ export function REPL({
     [toolPermissionContext, proactiveActive, isBriefOnly],
   );
 
-  useKickOffCheckAndDisableBypassPermissionsIfNeeded();
   useKickOffCheckAndDisableAutoModeIfNeeded();
 
   const [dynamicMcpConfig, setDynamicMcpConfig] = useState<Record<string, ScopedMcpServerConfig> | undefined>(
@@ -998,7 +999,6 @@ export function REPL({
   useCanSwitchToExistingSubscription();
   useIDEStatusIndicator({ ideSelection, mcpClients, ideInstallationStatus });
   useMcpConnectivityStatus({ mcpClients });
-  useAutoModeUnavailableNotification();
   usePluginInstallationStatus();
   usePluginAutoupdateNotification();
   useSettingsErrors();
@@ -1952,7 +1952,8 @@ export function REPL({
     const content = lastAssistant.message?.content;
     const contentArray = Array.isArray(content) ? content : [];
     const inProgressToolUses = contentArray.filter(
-      (b): b is ContentBlock & { type: 'tool_use'; id: string } => b.type === 'tool_use' && inProgressToolUseIDs.has((b as { id: string }).id),
+      (b): b is ContentBlock & { type: 'tool_use'; id: string } =>
+        b.type === 'tool_use' && inProgressToolUseIDs.has((b as { id: string }).id),
     );
     return (
       inProgressToolUses.length > 0 &&
@@ -3050,12 +3051,22 @@ export function REPL({
             // are O(n) per render, so drop everything before the previous
             // boundary to keep n bounded across multi-day sessions.
             if (isFullscreenEnvEnabled()) {
-              setMessages(old => [
-                ...getMessagesAfterCompactBoundary(old, {
+              setMessages(old => {
+                const postBoundary = getMessagesAfterCompactBoundary(old, {
                   includeSnipped: true,
-                }),
-                newMessage,
-              ]);
+                })
+                // Hard cap: keep at most 500 messages in fullscreen scrollback
+                // to prevent unbounded memory growth in multi-day sessions.
+                // normalizeMessages/applyGrouping are O(n), and Ink fiber
+                // trees cost ~250KB RSS per message. Without this cap,
+                // scrollback after several compactions can reach thousands
+                // of messages (observed: 13k+, 1GB+ heap).
+                const MAX_FULLSCREEN_SCROLLBACK = 500
+                const kept = postBoundary.length > MAX_FULLSCREEN_SCROLLBACK
+                  ? postBoundary.slice(-MAX_FULLSCREEN_SCROLLBACK)
+                  : postBoundary
+                return [...kept, newMessage]
+              });
             } else {
               setMessages(() => [newMessage]);
             }
@@ -3066,7 +3077,10 @@ export function REPL({
             if (feature('PROACTIVE') || feature('KAIROS')) {
               proactiveModule?.setContextBlocked(false);
             }
-          } else if (newMessage.type === 'progress' && isEphemeralToolProgress(((newMessage as unknown as { data?: { type?: string } }).data?.type))) {
+          } else if (
+            newMessage.type === 'progress' &&
+            isEphemeralToolProgress((newMessage as unknown as { data?: { type?: string } }).data?.type)
+          ) {
             // Replace the previous ephemeral progress tick for the same tool
             // call instead of appending. Sleep/Bash emit a tick per second and
             // only the last one is rendered; appending blows up the messages
@@ -3078,17 +3092,23 @@ export function REPL({
             // history). Replacing those leaves the AgentTool UI stuck at
             // "Initializing…" because it renders the full progress trail.
             setMessages(oldMessages => {
-              const last = oldMessages.at(-1);
-              const lastData = last?.data as Record<string, unknown> | undefined;
               const newData = newMessage.data as Record<string, unknown>;
-              if (
-                last?.type === 'progress' &&
-                last.parentToolUseID === newMessage.parentToolUseID &&
-                lastData?.type === newData.type
-              ) {
-                const copy = oldMessages.slice();
-                copy[copy.length - 1] = newMessage;
-                return copy;
+              // Scan backwards to find the last ephemeral progress with matching
+              // parentToolUseID and type. Previously only checked the last message,
+              // so interleaved non-ephemeral messages caused duplicate progress
+              // entries to accumulate (observed 13k+ entries in sleep-heavy sessions).
+              for (let i = oldMessages.length - 1; i >= 0; i--) {
+                const m = oldMessages[i]!
+                if (m.type !== 'progress') break
+                const mData = m.data as Record<string, unknown> | undefined
+                if (
+                  m.parentToolUseID === newMessage.parentToolUseID &&
+                  mData?.type === newData.type
+                ) {
+                  const copy = oldMessages.slice();
+                  copy[i] = newMessage;
+                  return copy;
+                }
               }
               return [...oldMessages, newMessage];
             });
@@ -3198,7 +3218,10 @@ export function REPL({
       // title silently fell through to the "Claude Code" default.
       if (!titleDisabled && !sessionTitle && !agentTitle && !haikuTitleAttemptedRef.current) {
         const firstUserMessage = newMessages.find(m => m.type === 'user' && !m.isMeta);
-        const text = firstUserMessage?.type === 'user' ? getContentText(firstUserMessage.message!.content as string | ContentBlockParam[]) : null;
+        const text =
+          firstUserMessage?.type === 'user'
+            ? getContentText(firstUserMessage.message!.content as string | ContentBlockParam[])
+            : null;
         // Skip synthetic breadcrumbs — slash-command output, prompt-skill
         // expansions (/commit → <command-message>), local-command headers
         // (/help → <command-name>), and bash-mode (!cmd → <bash-input>).
@@ -3299,8 +3322,8 @@ export function REPL({
       queryCheckpoint('query_context_loading_start');
       const [, , defaultSystemPrompt, baseUserContext, systemContext] = await Promise.all([
         // IMPORTANT: do this after setMessages() above, to avoid UI jank
-        checkAndDisableBypassPermissionsIfNeeded(toolPermissionContext, setAppState),
-        // Gated on TRANSCRIPT_CLASSIFIER so GrowthBook kill switch runs wherever auto mode is built in
+        undefined,
+        // Fast-mode circuit breaker check
         feature('TRANSCRIPT_CLASSIFIER')
           ? checkAndDisableAutoModeIfNeeded(toolPermissionContext, setAppState, store.getState().fastMode)
           : undefined,
@@ -3353,10 +3376,16 @@ export function REPL({
       }
 
       if (feature('BUDDY') && typeof (globalThis as Record<string, unknown>).fireCompanionObserver === 'function') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const _fireCompanionObserver = (globalThis as Record<string, any>).fireCompanionObserver as (msgs: unknown, cb: (r: unknown) => void) => void;
+        const _fireCompanionObserver = (globalThis as Record<string, unknown>).fireCompanionObserver as (
+          msgs: unknown,
+          cb: (r: unknown) => void,
+        ) => void;
         void _fireCompanionObserver(messagesRef.current, reaction =>
-          setAppState(prev => (prev.companionReaction === (reaction as typeof prev.companionReaction) ? prev : { ...prev, companionReaction: reaction as typeof prev.companionReaction })),
+          setAppState(prev =>
+            prev.companionReaction === (reaction as typeof prev.companionReaction)
+              ? prev
+              : { ...prev, companionReaction: reaction as typeof prev.companionReaction },
+          ),
         );
       }
 
@@ -3703,10 +3732,7 @@ export function REPL({
         }
       }
 
-      // Atomically: clear initial message, set permission mode and rules, and store plan for verification
-      const shouldStorePlanForVerification =
-        initialMsg.message.planContent && process.env.USER_TYPE === 'ant' && isEnvTruthy(undefined);
-
+      // Atomically: clear initial message, set permission mode and rules
       setAppState(prev => {
         // Build and apply permission updates (mode + allowedPrompts rules)
         let updatedToolPermissionContext = initialMsg.mode
@@ -3729,13 +3755,6 @@ export function REPL({
           ...prev,
           initialMessage: null,
           toolPermissionContext: updatedToolPermissionContext,
-          ...(shouldStorePlanForVerification ? {
-            pendingPlanVerification: {
-              plan: initialMsg.message.planContent as string,
-              verificationStarted: false,
-              verificationCompleted: false,
-            },
-          } : {}),
         };
       });
 
@@ -4299,7 +4318,7 @@ export function REPL({
           });
         }
       } else {
-        injectUserMessageToTeammate(task.id, input, setAppState);
+        injectUserMessageToTeammate(task.id, input, undefined, setAppState);
       }
       setInputValue('');
       helpers.setCursorOffset(0);
@@ -4804,7 +4823,7 @@ export function REPL({
   // Submits incoming prompts from teammate messages or tasks mode as new turns
   // Returns true if submission succeeded, false if a query is already running
   const handleIncomingPrompt = useCallback(
-    (content: string, options?: { isMeta?: boolean }): boolean => {
+    (input: string | QueuedCommand, options?: { isMeta?: boolean }): boolean => {
       if (queryGuard.isActive) return false;
 
       // Defer to user-queued commands — user input always takes priority
@@ -4816,16 +4835,53 @@ export function REPL({
         return false;
       }
 
+      const queuedCommand =
+        typeof input === 'string'
+          ? ({
+              value: input,
+              mode: 'prompt',
+              isMeta: options?.isMeta ? true : undefined,
+            } satisfies QueuedCommand)
+          : input;
+
       const newAbortController = createAbortController();
       setAbortController(newAbortController);
 
       // Create a user message with the formatted content (includes XML wrapper)
       const userMessage = createUserMessage({
-        content,
-        isMeta: options?.isMeta ? true : undefined,
+        content: queuedCommand.value as string,
+        isMeta: queuedCommand.isMeta ? true : undefined,
+        origin: queuedCommand.origin,
       });
 
-      void onQuery([userMessage], newAbortController, true, [], mainLoopModel);
+      const autonomyRunId = queuedCommand.autonomy?.runId;
+      if (autonomyRunId) {
+        void markAutonomyRunRunning(autonomyRunId);
+      }
+
+      void onQuery([userMessage], newAbortController, true, [], mainLoopModel)
+        .then(() => {
+          if (autonomyRunId) {
+            void finalizeAutonomyRunCompleted({
+              runId: autonomyRunId,
+              currentDir: getCwd(),
+              priority: 'later',
+            }).then(nextCommands => {
+              for (const command of nextCommands) {
+                enqueue(command);
+              }
+            });
+          }
+        })
+        .catch((error: unknown) => {
+          if (autonomyRunId) {
+            void finalizeAutonomyRunFailed({
+              runId: autonomyRunId,
+              error: String(error),
+            });
+          }
+          logError(toError(error));
+        });
       return true;
     },
     [onQuery, mainLoopModel, store],
@@ -4856,6 +4912,7 @@ export function REPL({
   const pipeIpcState = useAppState(s => getPipeIpc(s as any));
 
   usePipePermissionForward({ store, tools, setMessages, setToolUseConfirmQueue, getToolUseContext, mainLoopModel });
+  usePipeMuteSync({ setToolUseConfirmQueue });
 
   // Pipe IPC lifecycle — extracted to usePipeIpc hook
   usePipeIpc({ store, handleIncomingPrompt });
@@ -4898,9 +4955,50 @@ export function REPL({
     queuedCommandsLength: queuedCommands.length,
     hasActiveLocalJsxUI: isShowingLocalJSXCommand,
     isInPlanMode: toolPermissionContext.mode === 'plan',
-    onSubmitTick: (prompt: string) => handleIncomingPrompt(prompt, { isMeta: true }),
-    onQueueTick: (prompt: string) => enqueue({ mode: 'prompt', value: prompt, isMeta: true }),
+    onQueueTick: (command: QueuedCommand) => enqueue(command),
   });
+
+  useEffect(() => {
+    if (!proactiveActive) {
+      notifyAutomationStateChanged(null);
+      return;
+    }
+
+    if (isLoading) {
+      return;
+    }
+
+    if (
+      proactiveNextTickAt !== null &&
+      queuedCommands.length === 0 &&
+      !isShowingLocalJSXCommand &&
+      toolPermissionContext.mode !== 'plan' &&
+      initialMessage === null
+    ) {
+      notifyAutomationStateChanged({
+        enabled: true,
+        phase: 'standby',
+        next_tick_at: proactiveNextTickAt,
+        sleep_until: null,
+      });
+      return;
+    }
+
+    notifyAutomationStateChanged({
+      enabled: true,
+      phase: null,
+      next_tick_at: null,
+      sleep_until: null,
+    });
+  }, [
+    initialMessage,
+    isLoading,
+    isShowingLocalJSXCommand,
+    proactiveActive,
+    proactiveNextTickAt,
+    queuedCommands.length,
+    toolPermissionContext.mode,
+  ]);
 
   // Abort the current operation when a 'now' priority message arrives
   // (e.g. from a chat UI client via UDS).
@@ -4910,16 +5008,19 @@ export function REPL({
     }
   }, [queuedCommands]);
 
+  const onInitRef = useRef(onInit);
+  onInitRef.current = onInit;
+  const diagnosticTrackerRef = useRef(diagnosticTracker);
+  diagnosticTrackerRef.current = diagnosticTracker;
+
   // Initial load
   useEffect(() => {
-    void onInit();
+    void onInitRef.current();
 
     // Cleanup on unmount
     return () => {
-      void diagnosticTracker.shutdown();
+      void diagnosticTrackerRef.current.shutdown();
     };
-    // TODO: fix this
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Listen for suspend/resume events
@@ -4952,16 +5053,11 @@ export function REPL({
     if (!isLoading) return null;
 
     // Find stop hook progress messages
-    const progressMsgs = messages.filter(
-      (m): m is ProgressMessage<HookProgress> => {
-        if (m.type !== 'progress') return false;
-        const data = m.data as Record<string, unknown>;
-        return (
-          data.type === 'hook_progress' &&
-          (data.hookEvent === 'Stop' || data.hookEvent === 'SubagentStop')
-        );
-      },
-    );
+    const progressMsgs = messages.filter((m): m is ProgressMessage<HookProgress> => {
+      if (m.type !== 'progress') return false;
+      const data = m.data as Record<string, unknown>;
+      return data.type === 'hook_progress' && (data.hookEvent === 'Stop' || data.hookEvent === 'SubagentStop');
+    });
     if (progressMsgs.length === 0) return null;
 
     // Get the most recent stop hook execution
@@ -5588,7 +5684,7 @@ export function REPL({
                 </Box>
               )}
               {process.env.USER_TYPE === 'ant' && <TungstenLiveMonitor />}
-              {feature('WEB_BROWSER_TOOL') ? WebBrowserPanelModule && <WebBrowserPanelModule.WebBrowserPanel /> : null}
+              {/* WebBrowserPanel removed — browser-lite, no panel */}
               <Box flexGrow={1} />
               {showSpinner && (
                 <SpinnerWithVerb
@@ -6101,8 +6197,8 @@ export function REPL({
                         setInputValue={setInputValue}
                       />
                     )}
-                    {/* Skill improvement survey - appears when improvements detected (ant-only) */}
-                    {process.env.USER_TYPE === 'ant' && skillImprovementSurvey.suggestion && (
+                    {/* Skill improvement survey - appears when improvements detected */}
+                    {skillImprovementSurvey.suggestion && (
                       <SkillImprovementSurvey
                         isOpen={skillImprovementSurvey.isOpen}
                         skillName={skillImprovementSurvey.suggestion.skillName}

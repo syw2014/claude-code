@@ -235,6 +235,9 @@ export async function* query(
   // When called as a sub-agent, langfuseTrace is already set by runAgent()
   // — reuse it instead of creating an independent trace.
   const ownsTrace = !params.toolUseContext.langfuseTrace
+  logForDebugging(
+    `[query] ownsTrace=${ownsTrace} incoming langfuseTrace=${params.toolUseContext.langfuseTrace ? 'present' : 'null/undefined'} isLangfuseEnabled=${isLangfuseEnabled()}`,
+  )
   const langfuseTrace = params.toolUseContext.langfuseTrace
     ?? (isLangfuseEnabled()
       ? createTrace({
@@ -274,7 +277,6 @@ export async function* query(
   for (const uuid of consumedCommandUuids) {
     notifyCommandLifecycle(uuid, 'completed')
   }
-  // biome-ignore lint/style/noNonNullAssertion: terminal is always assigned when queryLoop returns normally
   return terminal!
 }
 
@@ -328,7 +330,7 @@ async function* queryLoop(
   // multiple compacts: each subtracts the final context at that compact's
   // trigger point. Loop-local (not on State) to avoid touching the 7 continue
   // sites.
-  let taskBudgetRemaining: number | undefined = undefined
+  let taskBudgetRemaining: number | undefined
 
   // Snapshot immutable env/statsig/session state once at entry. See QueryConfig
   // for what's included and why feature() gates are intentionally excluded.
