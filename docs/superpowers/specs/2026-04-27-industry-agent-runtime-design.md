@@ -67,6 +67,12 @@ AuditTrail（横切关注点，贯穿 Layer 2-5，写入 Layer 1 AuditStore）
 
 将所有单例迁移至显式传递的 `SessionContext` 对象，QueryEngine 改为纯无状态服务。
 
+工程实现中采用 `SessionContext + ContextEnvelope` 双对象模型：
+
+- `SessionContext` 是运行时对象，承载依赖注入、连接句柄、writer、store、adapter、权限模式等不可直接持久化的资源。
+- `ContextEnvelope` 是可序列化上下文快照，承载当前任务、业务对象引用、规则绑定、记忆引用、计划状态、工具结果摘要等，可写入 Redis、PostgreSQL 和 AuditTrail。
+- Runtime 内部传递 `SessionContext`，跨进程恢复、审计回放、Prompt 构建和前端状态查询使用 `ContextEnvelope`。
+
 ```typescript
 interface SessionContext {
   // 原 bootstrap/state.ts 单例迁入
@@ -206,8 +212,8 @@ packages/industry-adapter/
       │   ├── skills/                 — BizSkills（Markdown）
       │   ├── workflows/              — BizWorkflows（YAML）
       │   └── rules/                  — 业务规则集
-      ├── tobacco/                    — 烟草（Phase 5，占位）
-      └── water/                      — 水务（Phase 5，占位）
+      ├── tobacco/                    — 烟草（Phase 5 验证实现）
+      └── water/                      — 水务（Phase 5 验证实现）
 ```
 
 ### 5.2 IndustryAdapter 接口
@@ -593,3 +599,1338 @@ GET /api/v1/audit/sessions/:sessionId/replay
 | 审计 | 横切关注点 + Redis Stream 异步写入 | 不阻塞主流程，Redis 缓冲防止写入压力 |
 | 规则热加载 | Redis + YAML 版本管理 | 规则变更无需重启，支持灰度发布 |
 | Session 外置 | Redis SessionStore | 支持水平扩展，多节点会话可恢复 |
+
+---
+
+## 14. 工程化落地规格
+
+本章是后续开发的工程契约，补齐运行模型、数据库表结构、数据模型、API 入参与出参、审计数据访问、状态机、规则权限、测试验收和任务映射。前文保持总体架构视角，本章作为实现时的准入标准。
+
+### 14.1 默认技术栈与数据职责
+
+默认采用 PostgreSQL + Redis + Milvus/向量库：
+
+| 组件 | 职责 | 是否事实源 |
+|-----|-----|-----------|
+| PostgreSQL | 会话、任务、消息、工具调用、人工确认、审计事件、规则版本、Prompt 模板、Memory 元数据、知识源元数据 | 是 |
+| Redis | SessionStore、任务队列、SSE 连接索引、Audit Redis Stream、热规则缓存、短期记忆、幂等键 | 否，除短期状态外均可从 PostgreSQL 重建 |
+| Milvus/向量库 | 知识库向量索引、embedding 检索 | 否，原文和元数据在 PostgreSQL，向量可重建 |
+| 行业业务系统 | 读者、馆藏、借阅、费用、工单等业务事实 | 是，Runtime 只保存引用、快照和审计链 |
+
+数据来源原则：
+
+- 当前会话进度优先读 Redis SessionStore，持久化查询读 PostgreSQL。
+- 审计查询和回放以 PostgreSQL `agent_audit_events` 为事实源，不直接读取 Redis Stream。
+- 知识检索先查 Milvus 获取候选，再按 `source_id/chunk_id` 回 PostgreSQL 获取原文和权限元数据。
+- 业务对象当前状态从行业业务系统读取，业务对象历史状态从审计事件快照读取，避免 replay 被当前状态污染。
+
+### 14.2 核心运行模型
+
+#### 14.2.1 SessionContext
+
+`SessionContext` 只在进程内流转，不直接入库。
+
+```typescript
+interface SessionContext {
+  sessionId: UUID
+  traceId: UUID
+  taskId?: UUID
+  tenantId: string
+  userId: string
+  industryCode: string
+  cwd: string
+  projectRoot: string
+  permissionMode: PermissionMode
+  tokenCounts: TokenCounts
+  modelOverride?: string
+  industryAdapter: IndustryAdapter
+  ruleSet: RuleSet
+  auditWriter: AuditWriter
+  sessionStore: SessionStore
+  memoryStore: MemoryStore
+  ruleStore: RuleStore
+  promptStore: PromptStore
+  knowledgeStore: KnowledgeStore
+  sseWriter?: SSEWriter
+  pendingConfirm?: ConfirmRequest
+  envelope: ContextEnvelope
+}
+```
+
+#### 14.2.2 ContextEnvelope
+
+`ContextEnvelope` 是上下文快照，必须可 JSON 序列化。
+
+```typescript
+interface ContextEnvelope {
+  schemaVersion: 1
+  sessionId: UUID
+  traceId: UUID
+  taskId?: UUID
+  tenantId: string
+  userId: string
+  industryCode: string
+  turnId: UUID
+  currentIntent?: NormalizedIntent
+  bizRefs: Record<string, BizRef>
+  factSet: FactSet
+  memoryRefs: MemoryRef[]
+  ruleBindings: RuleBinding[]
+  capabilityBindings: CapabilityBinding[]
+  planState?: PlanState
+  priorToolResults: ToolResultSummary[]
+  promptRefs: PromptRef[]
+  costState: CostState
+  createdAt: string
+  updatedAt: string
+}
+```
+
+#### 14.2.3 其他核心模型
+
+```typescript
+type UUID = string
+
+interface TaskRun {
+  id: UUID
+  sessionId: UUID
+  traceId: UUID
+  tenantId: string
+  userId: string
+  industryCode: string
+  input: string
+  mode: 'fast' | 'agent' | 'workflow' | 'subagent'
+  status: TaskStatus
+  envelope: ContextEnvelope
+  startedAt?: string
+  completedAt?: string
+}
+
+interface RunRef {
+  type: 'session' | 'task' | 'tool_call' | 'workflow' | 'subagent'
+  id: UUID
+  traceId: UUID
+}
+
+interface BizRef {
+  type: string
+  id: string
+  displayName?: string
+  status?: string
+  attrs: Record<string, unknown>
+  constraints: string[]
+  sourceSystem: string
+  snapshotAt: string
+}
+
+interface FactSet {
+  facts: Record<string, unknown>
+  sources: Array<{ key: string; source: string; confidence?: number }>
+  builtAt: string
+}
+
+interface RuleBinding {
+  ruleId: string
+  ruleVersion: string
+  operation: string
+  result: 'PASS' | 'WARN' | 'BLOCKED'
+  reasons: string[]
+}
+
+interface CapabilityBinding {
+  channel: 'tool' | 'skill' | 'workflow' | 'subagent'
+  capabilityName: string
+  permissionLevel: 'low' | 'medium' | 'high'
+  confirmLevel: ConfirmLevel
+}
+
+interface ToolCallRecord {
+  id: UUID
+  taskId: UUID
+  traceId: UUID
+  name: string
+  channel: 'common_tool' | 'biz_tool' | 'mcp_tool' | 'workflow_tool'
+  status: ToolCallStatus
+  input: unknown
+  output?: unknown
+  error?: ApiError
+  durationMs?: number
+}
+
+interface ConfirmRequest {
+  id: UUID
+  sessionId: UUID
+  taskId: UUID
+  traceId: UUID
+  operation: string
+  confirmLevel: ConfirmLevel
+  requiredApproverRole: 'user' | 'librarian' | 'supervisor' | 'admin'
+  bizRefs: Record<string, BizRef>
+  factSet: FactSet
+  ruleWarnings: string[]
+  expiresAt: string
+}
+
+type ConfirmLevel =
+  | 'auto'
+  | 'silent_confirm'
+  | 'explicit_confirm'
+  | 'supervisor_approval'
+
+interface ApiError {
+  code: string
+  message: string
+  retryable: boolean
+  details?: Record<string, unknown>
+}
+```
+
+### 14.3 PostgreSQL 表结构设计
+
+所有业务表必须包含 `tenant_id`，跨租户查询默认禁止。时间字段统一使用 `timestamptz`。JSON 扩展字段统一使用 `jsonb`。主键默认 `uuid`。
+
+#### 14.3.1 `agent_sessions`
+
+会话事实表。
+
+| 字段 | 类型 | 说明 |
+|-----|-----|-----|
+| id | uuid pk | sessionId |
+| tenant_id | text not null | 租户 |
+| user_id | text not null | 用户 |
+| industry_code | text not null | 行业 |
+| status | text not null | SessionStatus |
+| permission_mode | text not null | 权限模式 |
+| model_override | text null | 模型覆盖 |
+| current_trace_id | uuid null | 当前 trace |
+| metadata | jsonb not null default '{}' | 扩展信息 |
+| created_at | timestamptz not null | 创建时间 |
+| updated_at | timestamptz not null | 更新时间 |
+| closed_at | timestamptz null | 关闭时间 |
+
+索引：
+
+- `(tenant_id, user_id, created_at desc)`
+- `(tenant_id, industry_code, status)`
+- `(current_trace_id)`
+
+#### 14.3.2 `agent_tasks`
+
+一次用户输入或工作流触发生成一个 task。
+
+| 字段 | 类型 | 说明 |
+|-----|-----|-----|
+| id | uuid pk | taskId |
+| session_id | uuid not null | 会话 |
+| trace_id | uuid not null | 审计链 |
+| tenant_id | text not null | 租户 |
+| user_id | text not null | 用户 |
+| industry_code | text not null | 行业 |
+| parent_task_id | uuid null | 子任务父级 |
+| input_text | text not null | 原始输入 |
+| mode | text not null | fast/agent/workflow/subagent |
+| status | text not null | TaskStatus |
+| envelope | jsonb not null | ContextEnvelope 快照 |
+| idempotency_key | text null | 幂等键 |
+| started_at | timestamptz null | 开始时间 |
+| completed_at | timestamptz null | 完成时间 |
+| created_at | timestamptz not null | 创建时间 |
+| updated_at | timestamptz not null | 更新时间 |
+
+约束与索引：
+
+- `unique (tenant_id, session_id, idempotency_key)` where `idempotency_key is not null`
+- `(tenant_id, session_id, created_at desc)`
+- `(tenant_id, trace_id)`
+- `(tenant_id, status, created_at)`
+
+#### 14.3.3 `agent_messages`
+
+保存用户、助手、系统和工具结果消息。大字段可按生命周期归档。
+
+| 字段 | 类型 | 说明 |
+|-----|-----|-----|
+| id | uuid pk | messageId |
+| session_id | uuid not null | 会话 |
+| task_id | uuid null | 所属任务 |
+| trace_id | uuid not null | 审计链 |
+| tenant_id | text not null | 租户 |
+| role | text not null | user/assistant/system/tool |
+| content | jsonb not null | 标准消息体 |
+| sequence | bigint not null | 会话内递增 |
+| token_count | integer null | token 数 |
+| created_at | timestamptz not null | 创建时间 |
+
+索引：
+
+- `unique (tenant_id, session_id, sequence)`
+- `(tenant_id, task_id, sequence)`
+- `(tenant_id, trace_id, sequence)`
+
+#### 14.3.4 `agent_tool_calls`
+
+工具调用事实表。
+
+| 字段 | 类型 | 说明 |
+|-----|-----|-----|
+| id | uuid pk | toolCallId |
+| session_id | uuid not null | 会话 |
+| task_id | uuid not null | 任务 |
+| trace_id | uuid not null | 审计链 |
+| tenant_id | text not null | 租户 |
+| tool_name | text not null | 工具名 |
+| channel | text not null | common_tool/biz_tool/mcp_tool/workflow_tool |
+| permission_level | text not null | low/medium/high |
+| status | text not null | ToolCallStatus |
+| input | jsonb not null | 输入 |
+| output | jsonb null | 输出 |
+| error | jsonb null | ApiError |
+| started_at | timestamptz null | 开始 |
+| completed_at | timestamptz null | 完成 |
+| duration_ms | integer null | 耗时 |
+| created_at | timestamptz not null | 创建 |
+
+索引：
+
+- `(tenant_id, task_id, created_at)`
+- `(tenant_id, trace_id, created_at)`
+- `(tenant_id, tool_name, created_at desc)`
+
+#### 14.3.5 `agent_human_confirms`
+
+人工确认与升级审批表。
+
+| 字段 | 类型 | 说明 |
+|-----|-----|-----|
+| id | uuid pk | confirmId |
+| session_id | uuid not null | 会话 |
+| task_id | uuid not null | 任务 |
+| trace_id | uuid not null | 审计链 |
+| tenant_id | text not null | 租户 |
+| operation | text not null | 操作 |
+| confirm_level | text not null | ConfirmLevel |
+| required_role | text not null | 需要角色 |
+| status | text not null | ConfirmStatus |
+| request_payload | jsonb not null | 展示给前端的确认卡数据 |
+| decision | text null | approve/reject |
+| confirmed_by | text null | 确认人 |
+| confirmed_role | text null | 确认人角色 |
+| confirmed_ip | inet null | 来源 IP |
+| expires_at | timestamptz not null | 过期时间 |
+| resolved_at | timestamptz null | 处理时间 |
+| created_at | timestamptz not null | 创建时间 |
+
+索引：
+
+- `(tenant_id, session_id, status)`
+- `(tenant_id, trace_id, created_at)`
+- `(tenant_id, expires_at)` where `status = 'pending'`
+
+#### 14.3.6 `agent_audit_events`
+
+审计事实源，所有审计查询和 replay 默认从此表读取。
+
+| 字段 | 类型 | 说明 |
+|-----|-----|-----|
+| id | uuid pk | auditEventId |
+| trace_id | uuid not null | 审计链 |
+| sequence | bigint not null | trace 内严格递增 |
+| session_id | uuid not null | 会话 |
+| task_id | uuid null | 任务 |
+| tool_call_id | uuid null | 工具调用 |
+| confirm_id | uuid null | 人工确认 |
+| tenant_id | text not null | 租户 |
+| user_id | text not null | 用户 |
+| industry_code | text not null | 行业 |
+| event_type | text not null | AuditEventType |
+| severity | text not null | info/warn/error/security |
+| payload | jsonb not null | 脱敏后的事件详情 |
+| raw_ref | jsonb null | 原始数据引用，不保存敏感明文 |
+| created_at | timestamptz not null | 事件时间 |
+
+约束与索引：
+
+- `unique (tenant_id, trace_id, sequence)`
+- `(tenant_id, trace_id, sequence)`
+- `(tenant_id, session_id, created_at desc)`
+- `(tenant_id, event_type, created_at desc)`
+- `gin (payload)`
+
+#### 14.3.7 `agent_audit_trace_summaries`
+
+审计列表页和管理后台筛选用的物化摘要表，由 AuditConsumer 异步维护，可从 `agent_audit_events` 重建。
+
+| 字段 | 类型 | 说明 |
+|-----|-----|-----|
+| trace_id | uuid pk | 审计链 |
+| tenant_id | text not null | 租户 |
+| session_id | uuid not null | 会话 |
+| root_task_id | uuid null | 根任务 |
+| user_id | text not null | 用户 |
+| industry_code | text not null | 行业 |
+| status | text not null | running/succeeded/failed/cancelled |
+| first_event_at | timestamptz not null | 首事件 |
+| last_event_at | timestamptz not null | 末事件 |
+| event_count | integer not null | 事件数 |
+| has_human_confirm | boolean not null | 是否人工确认 |
+| has_high_risk | boolean not null | 是否高风险 |
+| summary | jsonb not null | 摘要 |
+
+索引：
+
+- `(tenant_id, last_event_at desc)`
+- `(tenant_id, user_id, last_event_at desc)`
+- `(tenant_id, industry_code, status)`
+
+#### 14.3.8 `agent_memory_items`
+
+长期记忆元数据与正文。短期记忆在 Redis 中，过期后不保证存在。
+
+| 字段 | 类型 | 说明 |
+|-----|-----|-----|
+| id | uuid pk | memoryId |
+| tenant_id | text not null | 租户 |
+| user_id | text not null | 用户 |
+| industry_code | text not null | 行业 |
+| memory_type | text not null | preference/fact/procedure/summary |
+| scope | text not null | user/tenant/industry |
+| content | text not null | 可审计正文 |
+| metadata | jsonb not null | 来源、置信度、标签 |
+| source_trace_id | uuid null | 来源 trace |
+| expires_at | timestamptz null | 过期 |
+| created_at | timestamptz not null | 创建 |
+| updated_at | timestamptz not null | 更新 |
+
+索引：
+
+- `(tenant_id, user_id, industry_code, memory_type)`
+- `(tenant_id, source_trace_id)`
+- `gin (metadata)`
+
+#### 14.3.9 `agent_rule_versions`
+
+规则版本事实表。Redis 只缓存当前生效版本。
+
+| 字段 | 类型 | 说明 |
+|-----|-----|-----|
+| id | uuid pk | ruleVersionId |
+| tenant_id | text not null | 租户 |
+| industry_code | text not null | 行业 |
+| version | text not null | 规则版本 |
+| status | text not null | draft/active/retired |
+| rules | jsonb not null | 规则 DSL 或结构化规则 |
+| checksum | text not null | 内容校验 |
+| published_by | text null | 发布人 |
+| published_at | timestamptz null | 发布时间 |
+| created_at | timestamptz not null | 创建 |
+
+约束：
+
+- `unique (tenant_id, industry_code, version)`
+- 同一 `(tenant_id, industry_code)` 只能有一个 `active` 版本。
+
+#### 14.3.10 `agent_prompt_templates`
+
+Prompt 模板版本表。
+
+| 字段 | 类型 | 说明 |
+|-----|-----|-----|
+| id | uuid pk | promptTemplateId |
+| tenant_id | text not null | 租户 |
+| industry_code | text not null | 行业 |
+| template_key | text not null | system/scenes/checkout 等 |
+| version | text not null | 版本 |
+| status | text not null | draft/active/retired |
+| content | text not null | 模板正文 |
+| metadata | jsonb not null | cache 配置、变量声明 |
+| checksum | text not null | 内容校验 |
+| created_at | timestamptz not null | 创建 |
+| published_at | timestamptz null | 发布 |
+
+约束：
+
+- `unique (tenant_id, industry_code, template_key, version)`
+
+#### 14.3.11 `agent_knowledge_sources`
+
+知识库原文与向量索引元数据。向量本体在 Milvus。
+
+| 字段 | 类型 | 说明 |
+|-----|-----|-----|
+| id | uuid pk | sourceId |
+| tenant_id | text not null | 租户 |
+| industry_code | text not null | 行业 |
+| title | text not null | 标题 |
+| source_type | text not null | file/url/manual/api |
+| uri | text null | 来源 |
+| status | text not null | indexing/ready/failed/retired |
+| chunk_count | integer not null | 分块数 |
+| milvus_collection | text not null | collection |
+| metadata | jsonb not null | 权限、标签、版本 |
+| created_at | timestamptz not null | 创建 |
+| updated_at | timestamptz not null | 更新 |
+
+索引：
+
+- `(tenant_id, industry_code, status)`
+- `gin (metadata)`
+
+#### 14.3.12 `agent_knowledge_chunks`
+
+知识分块原文，用于检索结果回填和审计。
+
+| 字段 | 类型 | 说明 |
+|-----|-----|-----|
+| id | uuid pk | chunkId |
+| source_id | uuid not null | 来源 |
+| tenant_id | text not null | 租户 |
+| industry_code | text not null | 行业 |
+| chunk_index | integer not null | 分块序号 |
+| content | text not null | 原文 |
+| content_hash | text not null | 哈希 |
+| embedding_id | text not null | Milvus 主键 |
+| metadata | jsonb not null | 页码、段落、权限 |
+
+约束：
+
+- `unique (source_id, chunk_index)`
+- `unique (tenant_id, embedding_id)`
+
+#### 14.3.13 `agent_industry_adapters`
+
+行业适配器注册表。
+
+| 字段 | 类型 | 说明 |
+|-----|-----|-----|
+| industry_code | text pk | 行业 |
+| package_name | text not null | 包名 |
+| version | text not null | 版本 |
+| status | text not null | active/disabled |
+| capability_manifest | jsonb not null | 工具、技能、工作流声明 |
+| created_at | timestamptz not null | 创建 |
+| updated_at | timestamptz not null | 更新 |
+
+#### 14.3.14 Redis Key 设计
+
+| Key | 类型 | TTL | 说明 |
+|-----|-----|-----|-----|
+| `session:{tenantId}:{sessionId}` | hash/json | 会话结束后 24h | SessionState 热状态 |
+| `task:{tenantId}:{taskId}` | hash/json | 完成后 24h | TaskRun 热状态 |
+| `sse:{tenantId}:{sessionId}` | set | 连接存活 | SSE 连接索引 |
+| `audit_stream:{tenantId}` | stream | 按容量裁剪 | 审计写入缓冲 |
+| `rule:{tenantId}:{industryCode}:active` | string/json | 无固定 TTL | 当前规则版本 |
+| `idem:{tenantId}:{idempotencyKey}` | string/json | 24h | API 幂等结果 |
+| `memory:short:{tenantId}:{sessionId}` | hash/json | 会话结束 | 短期记忆 |
+
+#### 14.3.15 Milvus Collection 设计
+
+每个行业可独立 collection，也可按租户分区。默认：
+
+- collection: `knowledge_{industryCode}`
+- partition: `tenant_{tenantId}`
+- primary key: `embedding_id`
+- scalar fields: `tenant_id`, `industry_code`, `source_id`, `chunk_id`, `access_level`, `version`
+- vector field: `embedding`
+
+检索必须带 `tenant_id` 和 `industry_code` 过滤条件。
+
+### 14.4 API 入参与出参设计
+
+通用约定：
+
+- 所有写接口支持 `Idempotency-Key` header。
+- 所有响应包含 `requestId`、`traceId`、`serverTime`。
+- 错误统一返回 `ApiErrorResponse`。
+- 时间使用 ISO 8601。
+
+```typescript
+interface ApiResponse<T> {
+  requestId: string
+  traceId?: string
+  serverTime: string
+  data: T
+}
+
+interface ApiErrorResponse {
+  requestId: string
+  traceId?: string
+  serverTime: string
+  error: ApiError
+}
+```
+
+#### 14.4.1 创建会话
+
+`POST /api/v1/sessions`
+
+Request:
+
+```json
+{
+  "tenantId": "tenant_001",
+  "userId": "user_001",
+  "industryCode": "library",
+  "permissionMode": "default",
+  "modelOverride": null,
+  "metadata": {
+    "client": "web",
+    "locale": "zh-CN"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "requestId": "req_001",
+  "traceId": "trace_001",
+  "serverTime": "2026-04-27T10:00:00.000Z",
+  "data": {
+    "sessionId": "session_001",
+    "status": "active",
+    "industryCode": "library",
+    "streamUrl": "/api/v1/sessions/session_001/stream",
+    "createdAt": "2026-04-27T10:00:00.000Z"
+  }
+}
+```
+
+读写：
+
+- 写 `agent_sessions`
+- 写 `agent_audit_events(request_received/session_created)`
+- 写 Redis `session:{tenantId}:{sessionId}`
+
+#### 14.4.2 查询会话
+
+`GET /api/v1/sessions/:sessionId`
+
+Response:
+
+```json
+{
+  "requestId": "req_002",
+  "traceId": "trace_001",
+  "serverTime": "2026-04-27T10:00:01.000Z",
+  "data": {
+    "sessionId": "session_001",
+    "status": "active",
+    "industryCode": "library",
+    "currentTaskId": "task_001",
+    "pendingConfirmId": null,
+    "createdAt": "2026-04-27T10:00:00.000Z",
+    "updatedAt": "2026-04-27T10:00:01.000Z"
+  }
+}
+```
+
+数据源：
+
+- 优先 Redis SessionStore
+- Redis 缺失时读 `agent_sessions` + 最新 `agent_tasks`
+
+#### 14.4.3 关闭会话
+
+`DELETE /api/v1/sessions/:sessionId`
+
+Request:
+
+```json
+{
+  "reason": "user_closed"
+}
+```
+
+Response:
+
+```json
+{
+  "requestId": "req_003",
+  "traceId": "trace_001",
+  "serverTime": "2026-04-27T10:10:00.000Z",
+  "data": {
+    "sessionId": "session_001",
+    "status": "closed",
+    "closedAt": "2026-04-27T10:10:00.000Z"
+  }
+}
+```
+
+读写：
+
+- 更新 `agent_sessions`
+- 取消未完成 `agent_tasks`
+- 写 `agent_audit_events(session_closed)`
+- 清理 Redis SSE 连接索引
+
+#### 14.4.4 发送消息
+
+`POST /api/v1/sessions/:sessionId/messages`
+
+Request:
+
+```json
+{
+  "input": "扫码借书，读者A，馆藏B",
+  "mode": "auto",
+  "attachments": [],
+  "clientMessageId": "client_msg_001",
+  "metadata": {
+    "source": "circulation-desk"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "requestId": "req_004",
+  "traceId": "trace_002",
+  "serverTime": "2026-04-27T10:11:00.000Z",
+  "data": {
+    "taskId": "task_001",
+    "sessionId": "session_001",
+    "status": "queued",
+    "mode": "auto",
+    "streamUrl": "/api/v1/sessions/session_001/stream"
+  }
+}
+```
+
+读写：
+
+- 写 `agent_messages(role=user)`
+- 写 `agent_tasks`
+- 写 Redis `task:{tenantId}:{taskId}`
+- 写 `agent_audit_events(request_received)`
+- 推送 SSE `task_queued`
+
+#### 14.4.5 查询任务状态
+
+`GET /api/v1/tasks/:taskId`
+
+Response:
+
+```json
+{
+  "requestId": "req_005",
+  "traceId": "trace_002",
+  "serverTime": "2026-04-27T10:11:02.000Z",
+  "data": {
+    "taskId": "task_001",
+    "sessionId": "session_001",
+    "status": "waiting_confirm",
+    "mode": "fast",
+    "currentIntent": {
+      "sceneCode": "CIRCULATION_CHECKOUT",
+      "actionCode": "ACTION_INIT",
+      "confidence": 0.97,
+      "pathType": "fast"
+    },
+    "pendingConfirmId": "confirm_001",
+    "updatedAt": "2026-04-27T10:11:02.000Z"
+  }
+}
+```
+
+数据源：
+
+- 优先 Redis TaskState
+- Redis 缺失时读 `agent_tasks`
+
+#### 14.4.6 SSE 流式订阅
+
+`GET /api/v1/sessions/:sessionId/stream`
+
+事件格式：
+
+```text
+event: permission_required
+id: trace_002:7
+data: {"traceId":"trace_002","sequence":7,"taskId":"task_001","payload":{}}
+```
+
+标准事件：
+
+| 事件 | 说明 |
+|-----|-----|
+| `session_ready` | SSE 连接建立 |
+| `task_queued` | 任务已入队 |
+| `intent_detected` | 语义识别完成 |
+| `context_built` | ContextEnvelope 构建完成 |
+| `plan_created` | 计划生成 |
+| `message_delta` | 模型 token 增量 |
+| `tool_started` | 工具开始 |
+| `tool_completed` | 工具完成 |
+| `permission_required` | 需要人工确认 |
+| `permission_resolved` | 确认完成 |
+| `warning` | 成本、规则、降级等警告 |
+| `error` | 可展示错误 |
+| `done` | 任务结束 |
+
+SSE `id` 必须使用 `{traceId}:{sequence}`，前端重连时通过 `Last-Event-ID` 补发缺失事件。补发数据从 PostgreSQL `agent_audit_events` 读取，不从 Redis Stream 读取。
+
+#### 14.4.7 人工确认回调
+
+`POST /api/v1/sessions/:sessionId/confirm`
+
+Request:
+
+```json
+{
+  "confirmId": "confirm_001",
+  "decision": "approve",
+  "confirmedBy": "librarian_001",
+  "confirmedRole": "librarian",
+  "comment": "允许本次借出",
+  "clientDecisionId": "client_decision_001"
+}
+```
+
+Response:
+
+```json
+{
+  "requestId": "req_006",
+  "traceId": "trace_002",
+  "serverTime": "2026-04-27T10:11:20.000Z",
+  "data": {
+    "confirmId": "confirm_001",
+    "taskId": "task_001",
+    "status": "approved",
+    "nextTaskStatus": "running"
+  }
+}
+```
+
+读写：
+
+- 更新 `agent_human_confirms`
+- 更新 Redis TaskState
+- 写 `agent_audit_events(human_confirm)`
+- 推送 SSE `permission_resolved`
+- 若 approve，恢复挂起的 ToolLoop
+
+#### 14.4.8 审计 trace 列表
+
+`GET /api/v1/audit/traces?tenantId=&userId=&industryCode=&from=&to=&status=&hasHumanConfirm=`
+
+Response:
+
+```json
+{
+  "requestId": "req_007",
+  "serverTime": "2026-04-27T10:12:00.000Z",
+  "data": {
+    "items": [
+      {
+        "traceId": "trace_002",
+        "sessionId": "session_001",
+        "rootTaskId": "task_001",
+        "userId": "user_001",
+        "industryCode": "library",
+        "status": "succeeded",
+        "eventCount": 12,
+        "hasHumanConfirm": true,
+        "hasHighRisk": false,
+        "firstEventAt": "2026-04-27T10:11:00.000Z",
+        "lastEventAt": "2026-04-27T10:11:22.000Z",
+        "summary": {
+          "input": "扫码借书，读者A，馆藏B",
+          "result": "借阅成功"
+        }
+      }
+    ],
+    "page": {
+      "limit": 20,
+      "cursor": null,
+      "hasMore": false
+    }
+  }
+}
+```
+
+数据源：
+
+- 默认读 `agent_audit_trace_summaries`
+- 摘要缺失时从 `agent_audit_events` 聚合补偿
+
+#### 14.4.9 审计事件查询
+
+`GET /api/v1/audit/traces/:traceId/events`
+
+Response:
+
+```json
+{
+  "requestId": "req_008",
+  "traceId": "trace_002",
+  "serverTime": "2026-04-27T10:12:01.000Z",
+  "data": {
+    "traceId": "trace_002",
+    "events": [
+      {
+        "sequence": 1,
+        "eventType": "request_received",
+        "severity": "info",
+        "payload": {
+          "input": "扫码借书，读者A，馆藏B"
+        },
+        "createdAt": "2026-04-27T10:11:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+数据源：
+
+- 直接读 `agent_audit_events where trace_id = ? order by sequence`
+
+#### 14.4.10 审计 replay
+
+`GET /api/v1/audit/sessions/:sessionId/replay?traceId=`
+
+Response:
+
+```json
+{
+  "requestId": "req_009",
+  "traceId": "trace_002",
+  "serverTime": "2026-04-27T10:12:02.000Z",
+  "data": {
+    "sessionId": "session_001",
+    "traceId": "trace_002",
+    "steps": [
+      {
+        "sequence": 1,
+        "kind": "request",
+        "title": "收到用户请求",
+        "snapshot": {}
+      },
+      {
+        "sequence": 7,
+        "kind": "human_confirm",
+        "title": "馆员确认借出",
+        "snapshot": {}
+      }
+    ]
+  }
+}
+```
+
+Replay 只做展示还原，禁止重新执行 BizTool、MCPTool 或外部副作用操作。
+
+#### 14.4.11 规则版本查询与发布
+
+`GET /api/v1/rules/:industryCode/versions`
+
+`POST /api/v1/rules/:industryCode/versions`
+
+Publish Request:
+
+```json
+{
+  "version": "library-rules-2026-04-27",
+  "rules": {},
+  "publish": true,
+  "publishedBy": "admin_001"
+}
+```
+
+Publish Response:
+
+```json
+{
+  "requestId": "req_010",
+  "serverTime": "2026-04-27T10:13:00.000Z",
+  "data": {
+    "ruleVersionId": "rule_version_001",
+    "industryCode": "library",
+    "version": "library-rules-2026-04-27",
+    "status": "active",
+    "checksum": "sha256:..."
+  }
+}
+```
+
+发布写 `agent_rule_versions`，刷新 Redis `rule:{tenantId}:{industryCode}:active`。已创建的 session 沿用创建时绑定的 ruleVersion。
+
+#### 14.4.12 Prompt 模板查询与发布
+
+`GET /api/v1/prompts/:industryCode/templates`
+
+`POST /api/v1/prompts/:industryCode/templates`
+
+Request:
+
+```json
+{
+  "templateKey": "scenes/checkout",
+  "version": "2026-04-27",
+  "content": "你是图书馆借阅场景助手...",
+  "metadata": {
+    "cacheable": true,
+    "variables": ["reader", "bookCopy"]
+  },
+  "publish": true
+}
+```
+
+Response:
+
+```json
+{
+  "requestId": "req_011",
+  "serverTime": "2026-04-27T10:14:00.000Z",
+  "data": {
+    "promptTemplateId": "prompt_001",
+    "templateKey": "scenes/checkout",
+    "version": "2026-04-27",
+    "status": "active",
+    "checksum": "sha256:..."
+  }
+}
+```
+
+#### 14.4.13 行业能力查询
+
+`GET /api/v1/industries/:industryCode/capabilities`
+
+Response:
+
+```json
+{
+  "requestId": "req_012",
+  "serverTime": "2026-04-27T10:15:00.000Z",
+  "data": {
+    "industryCode": "library",
+    "adapterVersion": "0.1.0",
+    "tools": [
+      {
+        "name": "checkout_book",
+        "permissionLevel": "medium",
+        "confirmLevel": "explicit_confirm"
+      }
+    ],
+    "skills": [],
+    "workflows": []
+  }
+}
+```
+
+数据源：
+
+- `agent_industry_adapters.capability_manifest`
+- Adapter 包运行时 manifest 校验结果
+
+### 14.5 审计读写架构
+
+#### 14.5.1 写入路径
+
+```
+Runtime / ToolLoop / PermissionGate
+  → AuditWriter.record()
+  → Redis Stream audit_stream:{tenantId}
+  → AuditConsumer
+  → PostgreSQL agent_audit_events
+  → agent_audit_trace_summaries 异步更新
+```
+
+写入策略：
+
+- 普通事件异步写入 Redis Stream，主流程不等待 PostgreSQL。
+- 高风险副作用操作可配置为 `requireAuditDurability=true`，必须确认 `agent_audit_events` 落库成功后才返回业务成功。
+- Redis Stream 写入失败时，当前 task 标记为 `failed`，不得继续执行高风险工具。
+- AuditConsumer 必须幂等消费，依据 `(tenant_id, trace_id, sequence)` 去重。
+
+#### 14.5.2 查询路径
+
+| 查询 | 数据来源 |
+|-----|---------|
+| trace 列表 | `agent_audit_trace_summaries`，缺失时聚合 `agent_audit_events` |
+| trace 事件 | `agent_audit_events` |
+| session replay | `agent_audit_events` 为主，join `agent_messages/tool_calls/human_confirms` 补展示字段 |
+| 实时进度 | Redis SessionStore + SSE |
+| 业务当前状态 | 行业业务系统 |
+| 业务历史状态 | 审计 payload 中的 BizRef/FactSet 快照 |
+
+#### 14.5.3 AuditEvent 类型
+
+```typescript
+type AuditEventType =
+  | 'session_created'
+  | 'session_closed'
+  | 'request_received'
+  | 'intent_detected'
+  | 'context_built'
+  | 'plan_created'
+  | 'tool_call_started'
+  | 'tool_call_completed'
+  | 'permission_check'
+  | 'permission_required'
+  | 'human_confirm'
+  | 'permission_timeout'
+  | 'subagent_spawned'
+  | 'memory_read'
+  | 'memory_write'
+  | 'knowledge_query'
+  | 'rule_check'
+  | 'error'
+  | 'response_sent';
+
+interface AuditEvent {
+  id: UUID
+  traceId: UUID
+  sequence: number
+  sessionId: UUID
+  taskId?: UUID
+  toolCallId?: UUID
+  confirmId?: UUID
+  tenantId: string
+  userId: string
+  industryCode: string
+  eventType: AuditEventType
+  severity: 'info' | 'warn' | 'error' | 'security'
+  payload: Record<string, unknown>
+  createdAt: string
+}
+```
+
+脱敏要求：
+
+- API key、token、密码、手机号、证件号等敏感字段不得进入 `payload` 明文。
+- 可审计需要保留时写入 hash、尾号、或加密引用。
+- `raw_ref` 只保存外部对象引用，不保存未脱敏原文。
+
+### 14.6 状态机
+
+#### 14.6.1 SessionStatus
+
+| 状态 | 可进入状态 | 说明 |
+|-----|-----------|-----|
+| `created` | `active`, `failed` | 已创建，资源初始化中 |
+| `active` | `waiting_human`, `closing`, `failed`, `expired` | 可接收任务 |
+| `waiting_human` | `active`, `closing`, `expired`, `failed` | 存在挂起确认 |
+| `closing` | `closed`, `failed` | 正在 flush 审计和释放资源 |
+| `closed` | 无 | 正常关闭 |
+| `failed` | 无 | 异常终止 |
+| `expired` | 无 | 超时清理 |
+
+非法转换必须返回 `SESSION_STATE_CONFLICT`。
+
+#### 14.6.2 TaskStatus
+
+| 状态 | 可进入状态 |
+|-----|-----------|
+| `queued` | `running`, `cancelled` |
+| `running` | `waiting_confirm`, `succeeded`, `failed`, `cancelled` |
+| `waiting_confirm` | `running`, `rejected`, `timeout`, `cancelled` |
+| `succeeded` | 无 |
+| `failed` | 无 |
+| `rejected` | 无 |
+| `timeout` | 无 |
+| `cancelled` | 无 |
+
+#### 14.6.3 ToolCallStatus
+
+| 状态 | 可进入状态 |
+|-----|-----------|
+| `planned` | `permission_checking`, `executing`, `blocked`, `cancelled` |
+| `permission_checking` | `waiting_confirm`, `executing`, `blocked` |
+| `waiting_confirm` | `executing`, `blocked`, `timeout` |
+| `executing` | `succeeded`, `failed`, `retrying` |
+| `retrying` | `executing`, `failed` |
+| `succeeded` | 无 |
+| `failed` | 无 |
+| `blocked` | 无 |
+| `timeout` | 无 |
+| `cancelled` | 无 |
+
+#### 14.6.4 ConfirmStatus
+
+| 状态 | 可进入状态 |
+|-----|-----------|
+| `pending` | `approved`, `rejected`, `timeout`, `escalated`, `cancelled` |
+| `escalated` | `approved`, `rejected`, `timeout`, `cancelled` |
+| `approved` | 无 |
+| `rejected` | 无 |
+| `timeout` | 无 |
+| `cancelled` | 无 |
+
+### 14.7 规则与权限契约
+
+权限模型同时兼容原三级风险和任务规划中的四级确认升级。
+
+| permissionLevel | 默认 confirmLevel | 行为 |
+|----------------|----------------------|-----|
+| `low` | `auto` | 自动执行，仅审计 |
+| `medium` + Rule PASS | `auto` | 自动执行 |
+| `medium` + Rule WARN | `explicit_confirm` | 前端确认 |
+| `high` | `supervisor_approval` | 强制审批 |
+| 任意 + Rule BLOCKED | 无 | 禁止执行 |
+
+```typescript
+interface RuleCheckInput {
+  tenantId: string
+  industryCode: string
+  ruleVersion: string
+  operation: string
+  userId: string
+  userRole: string
+  bizRefs: Record<string, BizRef>
+  factSet: FactSet
+  context: Record<string, unknown>
+}
+
+interface RuleCheckResult {
+  result: 'PASS' | 'WARN' | 'BLOCKED'
+  ruleVersion: string
+  matchedRules: Array<{
+    ruleId: string
+    severity: 'info' | 'warn' | 'block'
+    reason: string
+  }>
+  warnings: string[]
+  requiredConfirmLevel: ConfirmLevel
+  requiredApproverRole?: 'user' | 'librarian' | 'supervisor' | 'admin'
+}
+```
+
+规则版本绑定：
+
+- Session 创建时绑定当前 active ruleVersion。
+- 同一 session 内 ruleVersion 不随 Redis 热更新变化。
+- 新 session 使用最新 active ruleVersion。
+- 规则发布写 PostgreSQL，成功后刷新 Redis。
+
+### 14.8 快路径与慢路径决策表
+
+| 条件 | 决策 | 审计事件 | 用户可见结果 |
+|-----|-----|---------|-------------|
+| `confidence >= 0.95` 且 `pathType=fast` 且参数齐备 | 进入快路径 | `intent_detected`, `context_built` | 快速处理 |
+| `confidence < 0.95` | 进入 QueryEngine 慢路径 | `intent_detected` | Agent 澄清或规划 |
+| 必要参数缺失 | 慢路径追问，不执行工具 | `context_built`, `response_sent` | 请求补充信息 |
+| Rule PASS + low/medium | 执行 BizTool | `rule_check`, `tool_call_started` | 返回执行结果 |
+| Rule WARN + medium | 挂起确认 | `rule_check`, `permission_required` | 前端确认卡 |
+| Rule BLOCKED | 阻断 | `rule_check`, `permission_check` | 返回阻断原因 |
+| high 权限工具 | 强制审批 | `permission_required` | 上级审批 |
+| 人工 approve | 恢复执行 | `human_confirm`, `tool_call_started` | 继续处理 |
+| 人工 reject | 终止 task | `human_confirm`, `response_sent` | 返回已拒绝 |
+| 确认超时 | 取消 task | `permission_timeout` | 返回超时 |
+| BizTool 可重试失败 | ErrorHandler retry | `error`, `tool_call_started` | 可能延迟 |
+| BizTool 不可重试失败 | task failed | `error`, `response_sent` | 返回失败原因 |
+| Audit 写入失败且高风险 | 阻断 | `error` | 返回审计不可用 |
+
+### 14.9 Claude Code 复用边界
+
+| 类别 | 模块 | 策略 |
+|-----|-----|-----|
+| 直接复用 | `Tool` interface、builtin tools、provider adapters、MCP client/server 基础能力 | 保持接口，补 ctx 适配层 |
+| 改造复用 | `QueryEngine`、`query()`、ToolLoop、Permission 相关类型、Cost 统计 | 去 Ink/CLI 依赖，显式传 `SessionContext` |
+| 参考复用 | REPL 消息流、Todo/Plan 展示、Checkpoint 思路 | 转为 SSE 和持久化状态 |
+| 不进入 Runtime | Ink UI、终端 permission UI、CLI bootstrap 快路径、模块级 `bootstrap/state.ts` 单例 | 服务端入口不得依赖 |
+| 必须替换 | 全局 sessionId、cwd、permissionMode、tokenCounts getter/setter | 迁入 `SessionContext` |
+
+新增服务入口 `src/entrypoints/server.ts` 必须绕开 Ink/CLI 层，不能从 `src/main.tsx` 反向启动。
+
+### 14.10 测试与验收矩阵
+
+| 范围 | 验收标准 |
+|-----|---------|
+| API 契约 | 所有核心接口有 request/response schema 测试，错误码稳定 |
+| SSE | 支持断线重连，`Last-Event-ID` 可从 `agent_audit_events` 补发 |
+| 并发 Session | 同进程多 session 并发运行，ContextEnvelope 不串数据 |
+| 快路径 | 图书馆借书/还书/续借在参数齐备时绕过 LLM |
+| 慢路径 | 参数缺失、低置信度、复杂争议进入 QueryEngine |
+| 权限确认 | WARN 挂起、approve 继续、reject 终止、timeout 取消 |
+| 高风险审批 | high 工具无论规则结果均需审批 |
+| 审计链路 | 每个 task 有完整 trace，sequence 连续，replay 不触发副作用 |
+| 规则版本 | session 内规则版本固定，新 session 使用最新版本 |
+| 知识库 | Milvus 检索结果可回 PostgreSQL 原文，租户隔离生效 |
+| 行业切换 | 引入第二行业 Adapter 时 Runtime 主干不修改 |
+| 异常恢复 | Redis 热状态丢失时可从 PostgreSQL 恢复可查询状态 |
+| 成本监控 | token 超预算产生 SSE warning 并写审计 |
+
+图书馆核心场景至少覆盖：
+
+- 扫码借书：正常读者 + 可借馆藏 → 快路径成功。
+- 扫码借书：读者有逾期 → WARN + 人工确认后成功。
+- 柜台归还：正常归还 → low 权限自动执行。
+- 自助续期：续借次数未耗尽 → 自动执行。
+- 预约取书：预约存在且馆藏到馆 → 自动执行或按规则确认。
+- 状态争议：进入慢路径，生成核查计划。
+- 费用争议：涉及减免时 high 权限审批。
+- 特殊授权：强制 supervisor/admin 审批。
+- 异常工单：可创建 task/workflow，支持断点续跑。
+
+### 14.11 任务规划映射
+
+结合 `docs/indus-agent/行业Agent任务规划.xlsx`，完整平台开发阶段按依赖关系组织如下。
+
+#### 阶段 A：基础设施与契约
+
+- 研发策略确认：明确 Claude Code、Hermes、OpenClaw 的复用/改造/自研边界。
+- 代码结构和脚手架设计。
+- PostgreSQL、Redis、Milvus 基础组件准备。
+- 数据库表结构和数据模型设计。
+- OpenAPI/SSE 契约设计。
+- `SessionContext` / `ContextEnvelope` 核心类型定义。
+
+#### 阶段 B：Runtime 主干
+
+- `src/entrypoints/server.ts` 服务入口。
+- Session 注册、生命周期管理、多 Session 并发调度。
+- QueryEngine 服务化改造。
+- PlanningEngine、ToolLoop、StreamingDispatcher。
+- PermissionGate、Human-in-the-Loop。
+- ErrorHandler、Logger、CostMonitor。
+- Checkpoint/Resume。
+
+#### 阶段 C：上下文与配置资产
+
+- `build_system_prompt()`。
+- `build_user_message()`。
+- `build_tools()`。
+- Prompt 库。
+- MemoryManager。
+- RuleEngine 与规则版本发布。
+
+#### 阶段 D：行业 Adapter 与图书馆能力
+
+- IndustryRegistry。
+- Library SemanticMapper。
+- Library BizRefBuilder。
+- Library CapabilityGateway。
+- 图书馆领域服务 MCP/BizTool 对接。
+- 图书馆业务 Tools、Skills、Workflows、Templates。
+
+#### 阶段 E：复杂业务与扩展能力
+
+- 借阅全流程 Agent。
+- 争议处理 Agent。
+- 采编快工作流。
+- 通用快工作流框架。
+- SubAgentSpawner。
+- OutputValidator。
+
+#### 阶段 F：治理、测试与上线
+
+- 审计链路和治理验证。
+- 端到端链路联调。
+- 图书馆场景回归测试。
+- 行业切换验证。
+- 性能与 Cost 监控。
+- Docker 部署方案和运维手册。
+
+### 14.12 开发准入规则
+
+- 新增 Runtime 代码不得读取 `src/bootstrap/state.ts` 的模块级运行态。
+- 任意外部副作用工具调用前必须经过 RuleEngine 和 PermissionGate。
+- 任意正式业务 task 必须生成 `traceId`，且至少包含 `request_received` 和 `response_sent` 审计事件。
+- 任意 API 写操作必须支持幂等键或显式说明不可幂等。
+- 任意跨租户查询必须带 `tenant_id` 条件。
+- 任意 replay 能力不得重新执行工具。
+- 任意 Milvus 查询必须带租户和行业过滤条件。
