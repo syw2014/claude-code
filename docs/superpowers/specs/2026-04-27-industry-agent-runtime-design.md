@@ -252,21 +252,51 @@ interface IndustryAdapter {
 
 **置信度计算（三层）：**
 
-置信度由三个分量加权合成，任一分量异常时整体置信度下降：
+置信度由四个分量加权合成，任一分量异常时整体置信度下降：
 
 ```typescript
 interface ConfidenceScore {
-  keywordMatch: number    // 关键词精确命中分数（0-1）：基于术语表精确/模糊匹配
-  structureMatch: number  // 输入结构完整度（0-1）：必填参数（读者ID、馆藏号等）是否存在
+  keywordMatch: number      // 关键词精确命中分数（0-1）：基于术语表精确/模糊匹配
+  embeddingSimilarity: number // 语义相似度（0-1）：输入向量与意图模板向量的余弦相似度
+  structureMatch: number    // 输入结构完整度（0-1）：必填参数（读者ID、馆藏号等）是否存在
   contextConsistency: number // 上下文一致性（0-1）：当前意图与会话历史是否连贯
 }
 
 function calcConfidence(scores: ConfidenceScore): number {
-  return scores.keywordMatch * 0.5
-       + scores.structureMatch * 0.3
-       + scores.contextConsistency * 0.2
+  return scores.keywordMatch      * 0.35
+       + scores.embeddingSimilarity * 0.35
+       + scores.structureMatch    * 0.20
+       + scores.contextConsistency * 0.10
 }
 ```
+
+**Embedding 相似度计算：**
+
+- 每个行业意图（sceneCode）预先维护若干标准表述模板，在 `IndustryAdapter` 初始化时计算并缓存为向量（存入 `ctx.knowledgeStore` 的意图向量分区）。
+- SemanticMapper 接收用户输入后，调用轻量 embedding 模型（如 `text-embedding-3-small`）计算输入向量，与所有意图模板向量批量计算余弦相似度，取最高值作为 `embeddingSimilarity`。
+- 同时将最高相似度对应的 `sceneCode` 作为候选意图（与关键词匹配结果取最高置信度的一方）。
+- Embedding 计算在进程内同步完成，模型加载后推理 ≤ 20ms（CPU 推理）；意图模板向量在服务启动时预热，不在请求路径上加载。
+
+```typescript
+// 意图模板定义示例（存于 industries/library/prompts/intent-templates.json）
+const intentTemplates: IntentTemplate[] = [
+  {
+    sceneCode: 'CIRCULATION_CHECKOUT',
+    pathType: 'fast',
+    examples: ['扫码借书', '借阅登记', '读者借书', '馆藏借出', 'checkout book'],
+    requiredParams: ['readerId', 'copyId'],
+  },
+  {
+    sceneCode: 'DISPUTE_FEE',
+    pathType: 'complex',
+    examples: ['费用有误', '罚款争议', '滞纳金核查', '金额不对'],
+    requiredParams: ['readerId'],
+  },
+  // ...
+]
+```
+
+**降级策略**：若 embedding 服务不可用（冷启动 / 模型加载失败），`embeddingSimilarity` 设为 `0`，整体置信度自动低于快路径阈值，降级为慢路径，不阻断服务。
 
 三级置信度分区：
 
@@ -276,7 +306,7 @@ function calcConfidence(scores: ConfidenceScore): number {
 | `0.7 - 0.95` | 进入慢路径，LLM 意图补全 | "帮我借一下那本书" |
 | `< 0.7` | 慢路径 + 主动追问 | 含歧义或缺少关键实体的输入 |
 
-置信度计算必须在 SemanticMapper 内同步完成（< 10ms），不得调用外部服务。术语表从 `ctx.promptStore` 加载（Redis 热缓存）。
+置信度计算在 SemanticMapper 内同步完成，目标 ≤ 30ms（含 embedding 推理）。关键词术语表和意图模板向量均从进程内缓存读取，不在请求路径上访问 Redis 或外部服务。
 
 **BizRefBuilder** — 行业对象 → BizRef + FactSet：
 
