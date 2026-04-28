@@ -17,7 +17,7 @@
 - **完整审计链路**：每次业务处理的全链路（请求、意图识别、工具调用、权限判定、人工确认、响应）均持久化，支持复查和合规审计
 - **多行业可切换**：Industry Adapter 层纯插拔，切换行业只替换 Adapter 包，AgentRuntime 不感知行业差异
 - **高并发多用户**：同进程支持大量并发会话，SessionContext 替换模块级单例，支持水平扩展
-- **快路径直通**：高频确定性操作（借还书等）绕过 LLM，直接路由到 BizTool，响应 < 200ms
+- **快路径直通**：高频确定性操作（借还书等）绕过 LLM，直接路由到 BizTool，Runtime 内部处理 ≤ 50ms，端到端（含 BizRefBuilder 外部调用）目标 ≤ 500ms
 - **人机边界清晰**：高风险操作强制人工确认，确认结果纳入审计链路
 
 ---
@@ -77,6 +77,8 @@ AuditTrail（横切关注点，贯穿 Layer 2-5，写入 Layer 1 AuditStore）
 interface SessionContext {
   // 原 bootstrap/state.ts 单例迁入
   sessionId: UUID
+  traceId: UUID
+  taskId?: UUID
   cwd: string
   projectRoot: string
   tokenCounts: TokenCounts
@@ -91,23 +93,25 @@ interface SessionContext {
   ruleSet: RuleSet
 
   // 审计上下文
-  traceId: UUID
   auditWriter: AuditWriter
 
-  // 外置存储访问
+  // 外置存储访问（依赖注入，不可序列化）
   sessionStore: SessionStore      // Redis（会话级状态）
   memoryStore: MemoryStore        // 长期记忆（跨会话）
+  ruleStore: RuleStore
+  promptStore: PromptStore
+  knowledgeStore: KnowledgeStore
 
   // Human-in-the-Loop 状态
   pendingConfirm?: ConfirmRequest
-  sseWriter: SSEWriter            // 流式推送给前端
+  sseWriter?: SSEWriter           // 流式推送给前端（非 SSE 模式下可缺省）
 
-  // 请求级数据（每次 message 处理时由 Industry Adapter Pipeline 填充）
-  currentIntent?: NormalizedIntent   // SemanticMapper 输出
-  bizRefs?: Map<string, BizRef>      // BizRefBuilder 输出
-  factSet?: FactSet                  // BizRefBuilder 输出
+  // 可序列化上下文快照（请求级业务数据由此持有，跨节点恢复时重建 SessionContext 后挂载）
+  envelope: ContextEnvelope
 }
 ```
+
+> **权威定义见 §14.2.1。** 此处为概念视图；请求级业务数据（currentIntent、bizRefs、factSet 等）属于 `ContextEnvelope` 字段（见 §14.2.2），不挂在 SessionContext 上，避免混淆运行时资源与可序列化快照。
 
 ### 3.3 调用链传递
 
@@ -246,6 +250,34 @@ interface IndustryAdapter {
 | 特殊授权审核 | `AUTH_SPECIAL` | `ACTION_INIT` | complex |
 | 异常工单处理 | `INCIDENT_HANDLE` | `ACTION_INIT` | complex |
 
+**置信度计算（三层）：**
+
+置信度由三个分量加权合成，任一分量异常时整体置信度下降：
+
+```typescript
+interface ConfidenceScore {
+  keywordMatch: number    // 关键词精确命中分数（0-1）：基于术语表精确/模糊匹配
+  structureMatch: number  // 输入结构完整度（0-1）：必填参数（读者ID、馆藏号等）是否存在
+  contextConsistency: number // 上下文一致性（0-1）：当前意图与会话历史是否连贯
+}
+
+function calcConfidence(scores: ConfidenceScore): number {
+  return scores.keywordMatch * 0.5
+       + scores.structureMatch * 0.3
+       + scores.contextConsistency * 0.2
+}
+```
+
+三级置信度分区：
+
+| 置信度区间 | 处理策略 | 典型场景 |
+|---------|---------|---------|
+| `>= 0.95` | 进入快路径（pathType='fast' 时） | "扫码借书，读者A，馆藏B" |
+| `0.7 - 0.95` | 进入慢路径，LLM 意图补全 | "帮我借一下那本书" |
+| `< 0.7` | 慢路径 + 主动追问 | 含歧义或缺少关键实体的输入 |
+
+置信度计算必须在 SemanticMapper 内同步完成（< 10ms），不得调用外部服务。术语表从 `ctx.promptStore` 加载（Redis 热缓存）。
+
 **BizRefBuilder** — 行业对象 → BizRef + FactSet：
 
 ```
@@ -291,7 +323,7 @@ function shouldUseFastPath(intent: NormalizedIntent, ctx: SessionContext): boole
     intent.confidence >= 0.95 &&           // 语义匹配置信度足够高
     intent.pathType === 'fast' &&           // SemanticMapper 标记为快路径
     intent.requiredParams.every(p =>        // 所有必要参数已齐备
-      ctx.bizRefs.has(p))
+      p in ctx.envelope.bizRefs)            // bizRefs 在 ContextEnvelope 中（见 §14.2.2）
   )
 }
 ```
@@ -308,7 +340,13 @@ Input → SemanticMapper（confidence=0.97, pathType='fast'）
   → SSE 推送结果
 ```
 
-**无 LLM 参与，响应时间 < 200ms**（对比慢路径 2-5s）。
+**无 LLM 参与。** 时间目标：
+- SemanticMapper + RuleEngine 内部处理：≤ 50ms（纯计算，无外部 I/O）
+- BizRefBuilder：调用行业业务系统读取读者/馆藏状态，受外部系统延迟影响，建议行业系统提供 ≤ 200ms 的查询 SLA
+- 端到端快路径（前端收到结果）：目标 ≤ 500ms（不含网络传输和人工确认等待）
+- 对比慢路径（含 LLM 推理）：2-5s
+
+> BizRefBuilder 的网络 I/O 是快路径主要延迟来源。若行业系统不能满足 SLA，可考虑对高频对象（当班读者）加 Redis 缓存，TTL ≤ 30s。
 
 ### 6.3 降级条件
 
@@ -442,6 +480,19 @@ PermissionGate 挂起
 
 向量数据库（Qdrant / pgvector）+ 原文索引，封装为 `KnowledgeQueryTool`，按 `industryCode` 隔离知识空间，管理后台导入触发向量重建。
 
+**检索触发模式（三种，按场景选择）：**
+
+| 触发模式 | 时机 | 适用场景 |
+|---------|-----|---------|
+| **显式工具调用** | LLM 或规划引擎主动调用 `KnowledgeQueryTool` | 争议处理、特殊授权等复杂慢路径，LLM 判断何时需要查阅制度 |
+| **上下文预注入** | `ContextEnvelopeBuilder` 在构建 envelope 时根据 `sceneCode` 自动检索并写入 `promptRefs` | 常见场景（借书、归还）的提示词中自动附带政策背景，无需 LLM 发起工具调用 |
+| **按需混合** | 慢路径中先注入 top-K 粗排结果（置信度 < 阈值），LLM 决定是否精排追问 | 意图不明确但涉及业务规则的中等置信度场景 |
+
+**检索约束：**
+- 所有检索必须携带 `tenant_id` 和 `industry_code` 过滤条件（见 §14.3.15）。
+- 检索结果 chunk 的 `chunk_id` 必须写入 `ContextEnvelope.promptRefs` 和对应审计事件（`knowledge_query`），保证可审计。
+- 上下文预注入的 token 预算由 `CostMonitor` 控制，超预算时降级为不注入。
+
 ### 10.3 规则库
 
 Redis（热数据）+ 版本化 YAML（源文件），支持灰度发布和回滚，新建会话使用最新版本，存量会话沿用旧版本至会话结束。
@@ -547,45 +598,7 @@ GET /api/v1/audit/sessions/:sessionId/replay
 
 ## 12. 分层开发路线
 
-### Phase 1 — Runtime 基础骨架
-
-- SessionContext 重构（替换 `src/bootstrap/state.ts` 所有单例）
-- `src/entrypoints/server.ts` + HTTP/WebSocket/SSE 服务
-- 基础 AuditTrail（事件写入 Redis Stream）
-- IndustryRegistry + IndustryAdapter 接口定义
-- **验收标准**：Runtime 可启动，接受请求，返回基础响应
-
-### Phase 2 — 图书馆行业能力
-
-- LibraryAdapter 三层实现（SemanticMapper + BizRefBuilder + CapabilityGateway）
-- 图书馆 BizTools（9 个，借还续查费用争议授权）
-- 快路径路由逻辑
-- RuleEngine + 图书馆规则集
-- PermissionGate 三级权限 + Human-in-the-Loop
-- **验收标准**：图书馆核心借还业务端到端可用
-
-### Phase 3 — 数据存储层
-
-- Memory 库（Redis 短期 + DB 长期）
-- 知识库（向量检索 + KnowledgeQueryTool）
-- Prompt 库（模板加载 + 图书馆术语表）
-- AuditStore 持久化（PostgreSQL + 查询 API）
-- **验收标准**：记忆、知识检索、完整审计链路可用
-
-### Phase 4 — 高级 Runtime 能力
-
-- BizSkills + BizWorkflows（采编流程、馆藏盘点等长流程）
-- SubAgent 通道（争议分析、多轮核查）
-- Checkpoint/Resume（断点续跑）
-- CostMonitor（Token 预算控制）
-- **验收标准**：复杂业务场景覆盖，长流程可中断恢复
-
-### Phase 5 — 多行业扩展
-
-- TobaccoAdapter（烟草行业）
-- WaterAdapter（水务行业）
-- IndustryRegistry 动态加载验证
-- **验收标准**：多行业切换验证架构可扩展性
+详细开发阶段划分（阶段 A-F）及各阶段交付物见 §14.11 任务规划映射。
 
 ---
 
@@ -595,7 +608,7 @@ GET /api/v1/audit/sessions/:sessionId/replay
 |-----|-----|-----|
 | 并发模型 | SessionContext 替换单例（方案 C） | 同进程高并发，无 Worker 线程开销 |
 | 行业切换 | IndustryRegistry 插拔式加载 | Runtime 不感知行业差异，切换只换 Adapter |
-| 快路径 | 绕过 LLM 直通 BizTool | 高频操作 < 200ms，LLM 仅用于复杂场景 |
+| 快路径 | 绕过 LLM 直通 BizTool | 内部 ≤ 50ms，端到端目标 ≤ 500ms（受行业系统 SLA 约束），LLM 仅用于复杂场景 |
 | 审计 | 横切关注点 + Redis Stream 异步写入 | 不阻塞主流程，Redis 缓冲防止写入压力 |
 | 规则热加载 | Redis + YAML 版本管理 | 规则变更无需重启，支持灰度发布 |
 | Session 外置 | Redis SessionStore | 支持水平扩展，多节点会话可恢复 |
@@ -784,6 +797,72 @@ interface ApiError {
   details?: Record<string, unknown>
 }
 ```
+
+#### 14.2.4 ContextEnvelope 压缩策略
+
+`priorToolResults: ToolResultSummary[]` 随 turn 数量累积会无界增长，需要主动压缩：
+
+- **最大保留条数**：默认保留最近 **20 条** ToolResultSummary。
+- **压缩触发时机**：每次 `turnId` 更新（即新一轮用户输入开始）时，由 `ContextEnvelopeBuilder` 检查并执行压缩。
+- **压缩策略**：
+  - 保留最近 20 条完整 ToolResultSummary。
+  - 超出部分聚合为一条 `{ type: 'compacted_summary', count: N, rangeStart: turnId, rangeEnd: turnId, summary: string }` 追加到头部。
+  - 聚合摘要由 LLM 生成或取 output 字段前 200 字符拼接。
+- **持久化保证**：压缩前的完整 ToolResultSummary 已写入 `agent_audit_events`，压缩只影响 envelope 快照，不影响审计链路。
+
+#### 14.2.5 跨节点 HITL 恢复机制
+
+PermissionGate 触发 HITL 时，确认回调可能到达不同的服务节点。节点间无共享内存，依赖 Redis 队列实现跨节点恢复：
+
+**挂起流程（触发节点）：**
+
+```
+PermissionGate.suspend()
+  → 将当前 ContextEnvelope（含 suspendPoint: { toolCallId, resumeAfterConfirm }）
+    写入 Redis task:{tenantId}:{taskId}（更新 suspendPoint 字段）
+  → UPDATE agent_tasks SET status='waiting_confirm', envelope=... WHERE id=taskId
+  → INSERT agent_human_confirms(status='pending', expires_at=now()+5min, ...)
+  → SSE 推送 { type: 'permission_required', confirmId, ... }
+  → Task Handler 返回（不阻塞线程，连接释放）
+```
+
+**确认回调（任意节点）：**
+
+```
+POST /sessions/:id/confirm
+  → 校验 confirmId 存在且 status='pending'，校验 confirmedRole 权限
+  → UPDATE agent_human_confirms SET status='approved'/'rejected', confirmed_by=...
+  → XADD task_resume_queue:{tenantId} { taskId, sessionId, confirmId, decision,
+      confirmedBy, confirmedRole, traceId }
+  → 写 agent_audit_events(human_confirm)
+  → SSE 推送 { type: 'permission_resolved', decision }
+  → 返回 202 Accepted（不等待 Task 完成）
+```
+
+**工作节点恢复（任意空闲节点）：**
+
+```
+TaskWorker.consumeResumeQueue()
+  → XREADGROUP task_resume_queue:{tenantId} GROUP workers consumer_id
+  → 读 Redis task:{tenantId}:{taskId} 获取 TaskRun + ContextEnvelope + suspendPoint
+  → 如 Redis 缺失，从 agent_tasks.envelope 重建
+  → 重建 SessionContext（从 SessionStore + IndustryRegistry + 依赖注入）
+  → ctx.envelope = 恢复的 ContextEnvelope
+  → 从 suspendPoint.toolCallId 之后继续 ToolLoop
+  → AuditTrail 记录 tool_call_started（接续原 traceId, sequence 递增）
+```
+
+**超时处理：**
+
+- 定时任务每分钟扫描 `agent_human_confirms WHERE status='pending' AND expires_at < now()`。
+- 对每条超时记录 XADD 超时 resume 消息（decision='timeout'）。
+- TaskWorker 收到后将 task 标记为 `timeout`，写 `permission_timeout` 审计事件。
+
+**Redis 新增 Key：**
+
+| Key | 类型 | TTL | 说明 |
+|-----|-----|-----|-----|
+| `task_resume_queue:{tenantId}` | stream | 消费后 24h | 跨节点 HITL 恢复消息队列，TaskWorker XREADGROUP 消费 |
 
 ### 14.3 PostgreSQL 表结构设计
 
@@ -1121,6 +1200,8 @@ Prompt 模板版本表。
 | `rule:{tenantId}:{industryCode}:active` | string/json | 无固定 TTL | 当前规则版本 |
 | `idem:{tenantId}:{idempotencyKey}` | string/json | 24h | API 幂等结果 |
 | `memory:short:{tenantId}:{sessionId}` | hash/json | 会话结束 | 短期记忆 |
+| `task_resume_queue:{tenantId}` | stream | 消费后 24h | 跨节点 HITL 恢复消息队列（见 §14.2.5） |
+| `audit_seq:{tenantId}:{traceId}` | string | trace 结束后 24h | trace 内 sequence 原子计数器 |
 
 #### 14.3.15 Milvus Collection 设计
 
@@ -1646,6 +1727,14 @@ Runtime / ToolLoop / PermissionGate
 - Redis Stream 写入失败时，当前 task 标记为 `failed`，不得继续执行高风险工具。
 - AuditConsumer 必须幂等消费，依据 `(tenant_id, trace_id, sequence)` 去重。
 
+**sequence 分配与顺序保证：**
+
+- `sequence` 由 `AuditSequence` 模块在 **写入 Redis Stream 之前** 分配，使用 Redis 原子命令 `INCR audit_seq:{tenantId}:{traceId}`。
+- 同一 traceId 的所有事件在进入 Stream 前已携带递增 sequence，Stream 消息本身保持 FIFO 顺序。
+- 多个 AuditConsumer 并发消费同一 Stream 时，使用 `XREADGROUP` Consumer Group，每条消息只被一个消费者处理，PostgreSQL 写入用 `INSERT ... ON CONFLICT (tenant_id, trace_id, sequence) DO NOTHING` 保证幂等。
+- 审计查询时按 `sequence ASC` 排序，不依赖 `created_at`（写入时间可能因消费者延迟差异而乱序）。
+- `AuditSequence` 计数器 Redis Key 为 `audit_seq:{tenantId}:{traceId}`，TTL = trace 结束后 24h（见 §14.3.14）。
+
 #### 14.5.2 查询路径
 
 | 查询 | 数据来源 |
@@ -1799,6 +1888,60 @@ interface RuleCheckResult {
 }
 ```
 
+**规则 DSL 格式（`agent_rule_versions.rules` jsonb 结构）：**
+
+```json
+{
+  "version": "library-rules-2026-04-27",
+  "industry": "library",
+  "rules": [
+    {
+      "id": "LIB-001",
+      "name": "读者逾期借书警告",
+      "operation": "checkout_book",
+      "condition": {
+        "type": "expr",
+        "expr": "facts.overdueCount > 0"
+      },
+      "severity": "warn",
+      "reason": "读者有 {{facts.overdueCount}} 本逾期未还，借出前需馆员确认",
+      "confirmLevel": "explicit_confirm",
+      "requiredApproverRole": "librarian"
+    },
+    {
+      "id": "LIB-002",
+      "name": "读者借阅上限阻断",
+      "operation": "checkout_book",
+      "condition": {
+        "type": "expr",
+        "expr": "facts.currentBorrowCount >= facts.borrowQuota"
+      },
+      "severity": "block",
+      "reason": "读者已达借阅上限（{{facts.borrowQuota}} 册），无法继续借出"
+    },
+    {
+      "id": "LIB-003",
+      "name": "高价值馆藏特殊授权",
+      "operation": "checkout_book",
+      "condition": {
+        "type": "expr",
+        "expr": "refs.bookCopy.attrs.restricted === true"
+      },
+      "severity": "block",
+      "reason": "该馆藏已标记为限制访问，需特殊授权",
+      "confirmLevel": "supervisor_approval",
+      "requiredApproverRole": "supervisor"
+    }
+  ]
+}
+```
+
+DSL 规范：
+- `condition.expr` 是基于 `facts`（FactSet.facts）和 `refs`（BizRef map）的 JavaScript 表达式子集，由 `RuleEvaluator` 安全沙盒执行（禁止调用函数、网络、I/O）。
+- `severity`：`"warn"` 触发 `WARN` 并按 `confirmLevel` 升级确认；`"block"` 触发 `BLOCKED`，操作直接阻断。
+- `reason` 支持 `{{expr}}` 模板插值，渲染时注入 facts 值。
+- 规则按数组顺序执行，全部 `warn` 和 `block` 规则均会运行，结果取最高 severity 合并。
+
 规则版本绑定：
 
 - Session 创建时绑定当前 active ruleVersion。
@@ -1847,12 +1990,26 @@ interface RuleCheckResult {
 | 慢路径 | 参数缺失、低置信度、复杂争议进入 QueryEngine |
 | 权限确认 | WARN 挂起、approve 继续、reject 终止、timeout 取消 |
 | 高风险审批 | high 工具无论规则结果均需审批 |
+| 跨节点 HITL | 确认回调在不同节点触发后，任意节点可从 Redis 恢复并继续 Task |
 | 审计链路 | 每个 task 有完整 trace，sequence 连续，replay 不触发副作用 |
+| 审计顺序 | 同一 traceId 事件按 sequence ASC 查询，顺序与运行时一致 |
 | 规则版本 | session 内规则版本固定，新 session 使用最新版本 |
 | 知识库 | Milvus 检索结果可回 PostgreSQL 原文，租户隔离生效 |
 | 行业切换 | 引入第二行业 Adapter 时 Runtime 主干不修改 |
 | 异常恢复 | Redis 热状态丢失时可从 PostgreSQL 恢复可查询状态 |
 | 成本监控 | token 超预算产生 SSE warning 并写审计 |
+| envelope 压缩 | priorToolResults 超过 20 条时压缩生效，审计完整性不受影响 |
+
+**性能 SLA（测试环境基准，需在集成测试中覆盖）：**
+
+| 指标 | 目标值 | 测试方法 |
+|-----|-------|---------|
+| 快路径内部处理（SemanticMapper + RuleEngine，不含外部 I/O） | P99 ≤ 50ms | 单元/集成基准测试，mock 外部调用 |
+| 快路径端到端（含 BizRefBuilder 外部调用，行业系统 mock 100ms）| P99 ≤ 500ms | 集成测试，行业系统 stub 固定 100ms 延迟 |
+| SSE 第一个事件（task_queued）延迟 | P99 ≤ 100ms | 消息发送到 SSE 事件收到的时间差 |
+| AuditConsumer 消费延迟（Redis Stream → PostgreSQL）| P99 ≤ 5s | 写入 Redis 到 agent_audit_events 落库时间差 |
+| 慢路径（含 LLM，模型 mock 1s 固定延迟）| P50 ≤ 3s | 集成测试，LLM mock 固定 1s 延迟 |
+| 并发 100 session，快路径吞吐 | ≥ 50 req/s | 负载测试 |
 
 图书馆核心场景至少覆盖：
 
