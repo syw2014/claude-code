@@ -82,6 +82,17 @@ export class LibraryCapabilityGateway extends BaseCapabilityGateway implements C
           },
         ]
 
+      case 'acquisition':
+      case 'acquisition_fast':
+        return [
+          {
+            channel: 'workflow',
+            capabilityName: 'acquisition-fast-flow',
+            permissionLevel: 'medium',
+            confirmLevel: 'auto',
+          },
+        ]
+
       default:
         return []
     }

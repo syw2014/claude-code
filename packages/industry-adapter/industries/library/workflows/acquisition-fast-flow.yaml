@@ -1,0 +1,14 @@
+name: acquisition-fast-flow
+description: 图书馆采编快工作流（选书→馆藏查重→记录采购意向）
+industry: library
+steps:
+  - id: query_holdings_step
+    tool: query_holdings
+    params:
+      query: "{{title}}"
+    onError: continue
+  - id: record_acquisition_step
+    tool: query_reader
+    params:
+      readerId: "{{librarianId}}"
+    onError: abort

@@ -45,6 +45,12 @@ export class LibrarySemanticMapper extends BaseSemanticMapper {
       examples: ['投诉', 'dispute', 'complaint', '申诉'],
       requiredParams: ['readerId'],
     },
+    {
+      sceneCode: 'acquisition',
+      pathType: 'fast',
+      examples: ['采购', '采编', '选书', 'acquisition'],
+      requiredParams: ['title', 'librarianId'],
+    },
   ]
 
   override async map(
@@ -129,6 +135,10 @@ export class LibrarySemanticMapper extends BaseSemanticMapper {
 
     if (sceneCode === 'dispute') {
       return 'handle_dispute'
+    }
+
+    if (sceneCode === 'acquisition') {
+      return 'acquisition'
     }
 
     return sceneCode

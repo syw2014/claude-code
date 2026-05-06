@@ -178,18 +178,19 @@ describe('loadWorkflow', () => {
 // ─── loadAllWorkflows ─────────────────────────────────────────────────────────
 
 describe('loadAllWorkflows', () => {
-  test('returns array of 4 workflows', () => {
+  test('returns array of 5 workflows', () => {
     const workflows = loadAllWorkflows()
-    expect(workflows).toHaveLength(4)
+    expect(workflows).toHaveLength(5)
   })
 
-  test('includes checkout-flow, return-flow, renew-flow, dispute-flow', () => {
+  test('includes checkout-flow, return-flow, renew-flow, dispute-flow, acquisition-fast-flow', () => {
     const workflows = loadAllWorkflows()
     const names = workflows.map(w => w.name)
     expect(names).toContain('checkout-flow')
     expect(names).toContain('return-flow')
     expect(names).toContain('renew-flow')
     expect(names).toContain('dispute-flow')
+    expect(names).toContain('acquisition-fast-flow')
   })
 
   test('all workflows belong to library industry', () => {
@@ -203,6 +204,49 @@ describe('loadAllWorkflows', () => {
     const workflows = loadAllWorkflows()
     for (const w of workflows) {
       expect(w.steps.length).toBeGreaterThanOrEqual(2)
+    }
+  })
+})
+
+// ─── acquisition-fast-flow ────────────────────────────────────────────────────
+
+describe('loadWorkflow("acquisition-fast-flow")', () => {
+  test('loads acquisition-fast-flow', () => {
+    const w = loadWorkflow('acquisition-fast-flow')
+    expect(w.name).toBe('acquisition-fast-flow')
+    expect(w.industry).toBe('library')
+    expect(w.description).toBeTypeOf('string')
+    expect(w.description.length).toBeGreaterThan(0)
+    expect(Array.isArray(w.steps)).toBe(true)
+    expect(w.steps.length).toBe(2)
+  })
+
+  test('first step is query_holdings with onError: continue', () => {
+    const w = loadWorkflow('acquisition-fast-flow')
+    const first = w.steps[0]!
+    expect(first.id).toBe('query_holdings_step')
+    expect(first.tool).toBe('query_holdings')
+    expect(first.onError).toBe('continue')
+    expect(first.params).toMatchObject({ query: '{{title}}' })
+  })
+
+  test('second step is query_reader with onError: abort', () => {
+    const w = loadWorkflow('acquisition-fast-flow')
+    const second = w.steps[1]!
+    expect(second.id).toBe('record_acquisition_step')
+    expect(second.tool).toBe('query_reader')
+    expect(second.onError).toBe('abort')
+    expect(second.params).toMatchObject({ readerId: '{{librarianId}}' })
+  })
+
+  test('all step params use {{placeholder}} syntax', () => {
+    const w = loadWorkflow('acquisition-fast-flow')
+    for (const step of w.steps) {
+      for (const val of Object.values(step.params)) {
+        if (typeof val === 'string') {
+          expect(val).toMatch(/^\{\{\w+\}\}$/)
+        }
+      }
     }
   })
 })
