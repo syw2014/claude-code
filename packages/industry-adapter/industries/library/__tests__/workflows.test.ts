@@ -178,17 +178,18 @@ describe('loadWorkflow', () => {
 // ─── loadAllWorkflows ─────────────────────────────────────────────────────────
 
 describe('loadAllWorkflows', () => {
-  test('returns array of 3 workflows', () => {
+  test('returns array of 4 workflows', () => {
     const workflows = loadAllWorkflows()
-    expect(workflows).toHaveLength(3)
+    expect(workflows).toHaveLength(4)
   })
 
-  test('includes checkout-flow, return-flow, renew-flow', () => {
+  test('includes checkout-flow, return-flow, renew-flow, dispute-flow', () => {
     const workflows = loadAllWorkflows()
     const names = workflows.map(w => w.name)
     expect(names).toContain('checkout-flow')
     expect(names).toContain('return-flow')
     expect(names).toContain('renew-flow')
+    expect(names).toContain('dispute-flow')
   })
 
   test('all workflows belong to library industry', () => {

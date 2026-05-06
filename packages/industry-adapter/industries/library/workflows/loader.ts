@@ -242,7 +242,7 @@ function validateWorkflow(raw: Record<string, unknown>, sourceName: string): Wor
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
 
-export const WORKFLOW_NAMES = ['checkout-flow', 'return-flow', 'renew-flow'] as const
+export const WORKFLOW_NAMES = ['checkout-flow', 'return-flow', 'renew-flow', 'dispute-flow'] as const
 export type WorkflowName = (typeof WORKFLOW_NAMES)[number]
 
 const __dir = dirname(fileURLToPath(import.meta.url))

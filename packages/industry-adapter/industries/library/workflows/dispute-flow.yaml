@@ -1,0 +1,21 @@
+name: dispute-flow
+description: 图书馆争议处理全流程
+industry: library
+steps:
+  - id: query_reader_step
+    tool: query_reader
+    params:
+      readerId: "{{readerId}}"
+    onError: abort
+  - id: handle_dispute_step
+    tool: handle_dispute
+    params:
+      readerId: "{{readerId}}"
+      bookId: "{{bookId}}"
+      disputeReason: "{{disputeReason}}"
+    onError: abort
+  - id: notify_step
+    tool: query_reader
+    params:
+      readerId: "{{readerId}}"
+    onError: continue
