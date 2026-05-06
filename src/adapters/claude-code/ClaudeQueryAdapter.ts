@@ -49,9 +49,10 @@ export class ClaudeQueryAdapter {
     if (sseWriter) {
       sseWriter.send({
         type: 'message_delta',
-        traceId: 'stub',
+        traceId: 'stub' as import('src/runtime/types').UUID,
         sequence: 1,
-        data: { delta: output },
+        sessionId: 'stub' as import('src/runtime/types').UUID,
+        delta: output,
       })
     }
 

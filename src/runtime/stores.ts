@@ -1,6 +1,7 @@
 // src/runtime/stores.ts
 import type { UUID } from './types.js'
 import type { NormalizedIntent } from '@claude-code-best/industry-adapter'
+import type { SSEEvent } from '../server/sse/types.js'
 
 // ─── SessionStore（Redis 热状态）────────────────────────────────────────────
 
@@ -96,12 +97,7 @@ export interface AuditWriter {
 
 // ─── SSEWriter（Server-Sent Events 推送）─────────────────────────────────────
 
-export interface SSEEvent {
-  type: string
-  traceId: UUID
-  sequence: number
-  data: Record<string, unknown>
-}
+export type { SSEEvent }
 
 export interface SSEWriter {
   send(event: SSEEvent): void

@@ -2,12 +2,14 @@
 import type { SSEWriter } from 'src/runtime/stores'
 import type { SseConnection } from './SseConnectionRegistry.js'
 import type { UUID } from 'src/runtime/types'
+import type { SSEEvent } from './types.js'
 
 const encoder = new TextEncoder()
 
-function formatSseMessage(event: { type: string; traceId: UUID; sequence: number; data: Record<string, unknown> }): Uint8Array {
-  const payload = JSON.stringify({ type: event.type, traceId: event.traceId, sequence: event.sequence, ...event.data })
-  return encoder.encode(`event: ${event.type}\ndata: ${payload}\nid: ${event.sequence}\n\n`)
+function formatSseMessage(event: SSEEvent): Uint8Array {
+  const { type, sequence, ...rest } = event
+  const payload = JSON.stringify({ type, sequence, ...rest })
+  return encoder.encode(`event: ${type}\ndata: ${payload}\nid: ${sequence}\n\n`)
 }
 
 /**
