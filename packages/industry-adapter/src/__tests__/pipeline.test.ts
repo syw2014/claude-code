@@ -9,8 +9,6 @@ import type {
   BizRef,
   FactSet,
   CapabilityBinding,
-  Skill,
-  Workflow,
   RuleSet,
   RuleCheckInput,
   RuleCheckResult,
@@ -131,7 +129,7 @@ describe('AdapterPipeline', () => {
       }
     }
 
-    const builderMock = async (intent: NormalizedIntent, _tenantId: string) => {
+    const builderMock = async (_intent: NormalizedIntent, _tenantId: string) => {
       callOrder.push('builder')
       return {
         bizRefs: { ref1: {
@@ -150,7 +148,7 @@ describe('AdapterPipeline', () => {
       }
     }
 
-    const gatewayMock = (intent: NormalizedIntent, _bizRefs: Record<string, BizRef>): CapabilityBinding[] => {
+    const gatewayMock = (_intent: NormalizedIntent, _bizRefs: Record<string, BizRef>): CapabilityBinding[] => {
       callOrder.push('gateway')
       return [
         {

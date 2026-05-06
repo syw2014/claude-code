@@ -9,8 +9,6 @@ import type {
   BizRef,
   FactSet,
   CapabilityBinding,
-  Skill,
-  Workflow,
   RuleSet,
   RuleCheckInput,
   RuleCheckResult,
