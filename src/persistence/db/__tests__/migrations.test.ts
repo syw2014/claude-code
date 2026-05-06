@@ -73,3 +73,46 @@ describe('Migration 002_audit.sql', () => {
     expect(sql).toContain('has_high_risk    BOOLEAN')
   })
 })
+
+describe('Migration 003_content.sql', () => {
+  const sql = readMigration('003_content.sql')
+
+  test('包含 agent_memory_items 表', () => {
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS agent_memory_items')
+    expect(sql).toContain("CHECK (memory_type IN (")
+    expect(sql).toContain("'preference','fact','procedure','summary'")
+  })
+
+  test('agent_rule_versions active 唯一约束', () => {
+    expect(sql).toContain('CREATE UNIQUE INDEX IF NOT EXISTS idx_rule_versions_active_one')
+    expect(sql).toContain("WHERE status = 'active'")
+  })
+
+  test('包含 agent_knowledge_sources 和 agent_knowledge_chunks 表', () => {
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS agent_knowledge_sources')
+    expect(sql).toContain('milvus_collection  TEXT        NOT NULL')
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS agent_knowledge_chunks')
+    expect(sql).toContain('embedding_id   TEXT    NOT NULL')
+  })
+
+  test('包含 agent_industry_adapters 表', () => {
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS agent_industry_adapters')
+    expect(sql).toContain('capability_manifest  JSONB')
+  })
+
+  test('全部 13 张表在三个迁移文件中', () => {
+    const sql001 = readMigration('001_core.sql')
+    const sql002 = readMigration('002_audit.sql')
+    const allSql = sql001 + sql002 + sql
+    const tableNames = [
+      'agent_sessions', 'agent_tasks', 'agent_messages',
+      'agent_tool_calls', 'agent_human_confirms',
+      'agent_audit_events', 'agent_audit_trace_summaries',
+      'agent_memory_items', 'agent_rule_versions', 'agent_prompt_templates',
+      'agent_knowledge_sources', 'agent_knowledge_chunks', 'agent_industry_adapters',
+    ]
+    for (const name of tableNames) {
+      expect(allSql).toContain(`CREATE TABLE IF NOT EXISTS ${name}`)
+    }
+  })
+})
