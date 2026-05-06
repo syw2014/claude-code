@@ -7,7 +7,7 @@ import {
   buildUserMessage,
   type UserMessageInput,
 } from '../buildUserMessage.js'
-import { buildTools, type BuiltTools } from '../buildTools.js'
+import { buildTools } from '../buildTools.js'
 import type {
   NormalizedIntent,
   BizRef,
