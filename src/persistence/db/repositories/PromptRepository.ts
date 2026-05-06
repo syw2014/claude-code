@@ -49,7 +49,7 @@ export class InMemoryPromptRepository implements PromptRepository {
     })
   }
 
-  async getTemplate(tenantId: string, industryCode: string, templateKey: string): Promise<string> {
+  async getTemplate(_tenantId: string, industryCode: string, templateKey: string): Promise<string> {
     // Find active template for this industry + key
     for (const template of this.store.values()) {
       if (template.industryCode === industryCode && template.id === templateKey && template.isActive) {
@@ -60,7 +60,7 @@ export class InMemoryPromptRepository implements PromptRepository {
     return ''
   }
 
-  async getIntentTemplates(industryCode: string) {
+  async getIntentTemplates(_industryCode: string) {
     // Return empty array - this is a stub implementation
     // In production, this would return intent-specific templates
     return []
