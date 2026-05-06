@@ -1,0 +1,87 @@
+flowchart TB
+  start["1. 前端提交消息<br/>POST /sessions/:id/messages<br/>input: 扫码借书，读者A，馆藏B"]
+  middleware["2. API 中间件<br/>Auth / Tenant / Idempotency<br/>生成 requestId"]
+  persist_request["3. 写入请求事实<br/>agent_messages(user)<br/>agent_tasks(queued)<br/>Redis task hot state"]
+  runtime["4. AgentRuntime.run<br/>创建 SessionContext<br/>挂载 ContextEnvelope"]
+  mapper["5. SemanticMapper<br/>scene=CIRCULATION_CHECKOUT<br/>confidence=0.97<br/>pathType=fast"]
+  bizref["6. BizRefBuilder<br/>读取 Reader A / BookCopy B<br/>构建 BizRef + FactSet"]
+  biz_system["行业业务系统<br/>Reader: overdueCount=2<br/>BookCopy: AVAILABLE"]
+  fast{"7. 快路径命中？"}
+  slow["慢路径分支<br/>QueryRuntime → Prompt/Memory/Knowledge → LLM<br/>缺参数时追问；复杂争议时规划"]
+  loop["ToolLoop 循环<br/>模型决定工具 → 执行 → 结果回传 → 下一步"]
+  subagent["SubAgent 分支<br/>状态争议 / 费用争议 / 异常工单<br/>子 Agent 继承 traceId"]
+  rule["8. RuleEngine.check(checkout_book)<br/>读取 session 绑定 ruleVersion<br/>结果: WARN"]
+  rule_result{"规则结果"}
+  blocked["BLOCKED 分支<br/>不执行工具<br/>TaskStatus=failed/rejected<br/>SSE error"]
+  permission["9. PermissionGate<br/>medium + WARN<br/>requiredConfirmLevel=explicit_confirm"]
+  confirm_level{"确认等级"}
+  auto["auto 分支<br/>low 或 medium+PASS<br/>直接执行工具"]
+  hitl["10. HumanConfirmManager<br/>写 agent_human_confirms(pending)<br/>SSE permission_required"]
+  human["11. 馆员确认卡片<br/>approve / reject / timeout"]
+  confirm_result{"确认结果"}
+  rejected["reject / timeout 分支<br/>更新 agent_human_confirms<br/>TaskStatus=rejected/timeout<br/>SSE done"]
+  tool["12. Tool Execute<br/>checkout_book(readerId=A, copyId=B)<br/>写 agent_tool_calls(executing)"]
+  checkout["图书馆借阅服务<br/>libraryApi.checkout()"]
+  tool_success{"工具成功？"}
+  retry["可重试失败<br/>ErrorHandler.retry<br/>写 error audit<br/>回到 Tool Execute"]
+  failed["不可重试失败<br/>TaskStatus=failed<br/>SSE error"]
+  next_step{"还需要下一步？"}
+  response["13. Final Response<br/>写 assistant message<br/>TaskStatus=succeeded<br/>SSE done"]
+  sse["SSE Stream<br/>task_queued / intent_detected / permission_required<br/>tool_completed / done"]
+  postgres[("PostgreSQL<br/>agent_messages / agent_tasks<br/>agent_human_confirms<br/>agent_tool_calls<br/>agent_audit_events / summaries")]
+  redis[("Redis<br/>task hot state<br/>audit_stream / audit_seq<br/>sse / idempotency / rule cache")]
+  audit["AuditWriter → Redis Stream → AuditConsumer → PostgreSQL<br/>所有关键节点记录 request / intent / context / rule / permission / human_confirm / tool / response"]
+  replay["Replay / SSE reconnect<br/>Last-Event-ID → agent_audit_events<br/>只回放展示，不重新执行工具"]
+
+  start --> middleware --> persist_request --> runtime --> mapper --> bizref
+  bizref -->|"查询业务对象"| biz_system
+  bizref --> fast
+  fast -->|"是"| rule
+  fast -->|"否"| slow -->|"LLM tool call"| loop
+  loop -->|"争议/长流程"| subagent
+  loop -.->|"每次 tool call"| rule
+  rule --> rule_result
+  rule_result -->|"BLOCKED"| blocked
+  rule_result -->|"PASS/WARN"| permission --> confirm_level
+  confirm_level -->|"auto"| auto --> tool
+  confirm_level -->|"explicit_confirm"| hitl -->|"permission_required SSE"| human -->|"Confirm API"| confirm_result
+  confirm_result -->|"reject/timeout"| rejected
+  confirm_result -->|"approve"| tool
+  tool -->|"调用借阅服务"| checkout
+  tool --> tool_success
+  tool_success -->|"retryable"| retry -.->|"retry loop"| tool
+  tool_success -->|"non-retryable"| failed
+  tool_success -->|"success"| next_step
+  next_step -->|"next step loop"| loop
+  next_step -->|"complete"| response --> sse
+  hitl -->|"写确认记录"| postgres
+  tool -->|"读写任务/工具记录"| postgres
+  hitl -->|"热状态/队列"| redis
+  response -->|"写消息/任务状态"| postgres
+  response -->|"更新热状态"| redis
+  sse -.->|"Last-Event-ID 补发"| replay --> postgres
+  runtime -.->|"audit every step"| audit
+  rule -.->|"audit every step"| audit
+  hitl -.->|"audit every step"| audit
+  tool -.->|"audit every step"| audit
+  response -.->|"audit every step"| audit
+  audit --> postgres
+  audit --> redis
+
+  classDef frontend fill:#FFE6CC,stroke:#D77757,color:#111;
+  classDef gateway fill:#DAE8FC,stroke:#5769F7,color:#111;
+  classDef runtime fill:#D5E8D4,stroke:#4B8F63,color:#111;
+  classDef decision fill:#FFF2CC,stroke:#D6B656,color:#111;
+  classDef human fill:#F8CECC,stroke:#B85450,color:#111;
+  classDef tool fill:#EADCF8,stroke:#8F62C9,color:#111;
+  classDef store fill:#F5F5F5,stroke:#666,color:#111;
+  classDef audit fill:#F8CECC,stroke:#C95F5F,color:#111;
+
+  class start,human,sse frontend;
+  class middleware,persist_request gateway;
+  class runtime,slow,loop,response,replay runtime;
+  class fast,rule,rule_result,permission,confirm_level,tool_success,next_step decision;
+  class hitl,confirm_result,rejected,blocked,retry,failed human;
+  class mapper,bizref,subagent,auto,tool,checkout tool;
+  class postgres,redis,biz_system store;
+  class audit audit;

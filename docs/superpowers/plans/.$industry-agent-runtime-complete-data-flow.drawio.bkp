@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram name="完整数据链路">
+    <mxGraphModel dx="2600" dy="1700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="1600" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="行业 Agent Runtime 完整数据链路图" style="text;html=1;strokeColor=none;fillColor=none;fontSize=28;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="770" y="20" width="1000" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="主线：黑/绿箭头　分支：黄/红箭头　审计：红色虚线　SSE：橙色箭头　数据读写：灰/紫箭头" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F6F6F3;strokeColor=#999999;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="620" y="80" width="1300" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lane_front" value="Frontend / API" style="swimlane;startSize=32;html=1;rounded=1;whiteSpace=wrap;fillColor=#FFF4E8;strokeColor=#D77757;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="40" y="150" width="310" height="1280" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_gateway" value="IndustryGateway" style="swimlane;startSize=32;html=1;rounded=1;whiteSpace=wrap;fillColor=#EAF0FF;strokeColor=#5769F7;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="390" y="150" width="360" height="1280" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_runtime" value="AgentRuntime" style="swimlane;startSize=32;html=1;rounded=1;whiteSpace=wrap;fillColor=#EEF7F1;strokeColor=#4B8F63;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="790" y="150" width="610" height="1280" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_cap" value="Adapter / Capability" style="swimlane;startSize=32;html=1;rounded=1;whiteSpace=wrap;fillColor=#F8F1FF;strokeColor=#8F62C9;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="1440" y="150" width="430" height="1280" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_store" value="Storage / External Systems" style="swimlane;startSize=32;html=1;rounded=1;whiteSpace=wrap;fillColor=#F6F6F3;strokeColor=#777777;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="1910" y="150" width="320" height="1280" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_audit" value="AuditTrail" style="swimlane;startSize=32;html=1;rounded=1;whiteSpace=wrap;fillColor=#FFF1F1;strokeColor=#C95F5F;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="2270" y="150" width="290" height="1280" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f1" value="1. 创建会话&#xa;POST /api/v1/sessions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D77757;fontSize=12;fontStyle=1;" vertex="1" parent="lane_front">
+          <mxGeometry x="35" y="70" width="230" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="f2" value="2. 发送消息&#xa;POST /sessions/:id/messages" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D77757;fontSize=12;fontStyle=1;" vertex="1" parent="lane_front">
+          <mxGeometry x="35" y="215" width="230" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="f3" value="SSE Client&#xa;stream / reconnect&#xa;Last-Event-ID" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=12;" vertex="1" parent="lane_front">
+          <mxGeometry x="35" y="930" width="230" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="f4" value="人工确认&#xa;approve / reject" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=12;" vertex="1" parent="lane_front">
+          <mxGeometry x="35" y="620" width="230" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="g1" value="Auth / Tenant / Idempotency" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#5769F7;fontSize=12;" vertex="1" parent="lane_gateway">
+          <mxGeometry x="45" y="70" width="240" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="g2" value="SessionRepository.create&#xa;SessionStore.write" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#5769F7;fontSize=12;" vertex="1" parent="lane_gateway">
+          <mxGeometry x="45" y="145" width="240" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="g3" value="MessageRepository.create&#xa;TaskRepository.create" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#5769F7;fontSize=12;" vertex="1" parent="lane_gateway">
+          <mxGeometry x="45" y="255" width="240" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="g4" value="SSE Stream Writer&#xa;session_ready / task_queued / deltas / done" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=12;" vertex="1" parent="lane_gateway">
+          <mxGeometry x="45" y="930" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="g5" value="Confirm API&#xa;HumanConfirmRepository.resolve" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=12;" vertex="1" parent="lane_gateway">
+          <mxGeometry x="45" y="620" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="g6" value="Audit API&#xa;trace list / events / replay" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#C95F5F;fontSize=12;" vertex="1" parent="lane_gateway">
+          <mxGeometry x="45" y="1080" width="240" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r1" value="AgentRuntime.run(task, ctx)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#4B8F63;fontSize=12;fontStyle=1;" vertex="1" parent="lane_runtime">
+          <mxGeometry x="45" y="255" width="230" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="ContextEnvelopeBuilder&#xa;turnId / traceId / taskId" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#4B8F63;fontSize=12;" vertex="1" parent="lane_runtime">
+          <mxGeometry x="45" y="340" width="230" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" value="快路径命中?&#xa;confidence ≥ 0.95&#xa;params complete" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=12;" vertex="1" parent="lane_runtime">
+          <mxGeometry x="70" y="445" width="180" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="r4" value="QueryRuntime 慢路径&#xa;Prompt + Memory + Knowledge + LLM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=12;" vertex="1" parent="lane_runtime">
+          <mxGeometry x="335" y="445" width="230" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="r5" value="PlanningEngine / ToolLoop&#xa;循环：tool call → result → next" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#4B8F63;fontSize=12;" vertex="1" parent="lane_runtime">
+          <mxGeometry x="335" y="570" width="230" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="r6" value="RuleEngine.check" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=12;" vertex="1" parent="lane_runtime">
+          <mxGeometry x="55" y="585" width="210" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="r7" value="PermissionGate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=12;" vertex="1" parent="lane_runtime">
+          <mxGeometry x="55" y="670" width="210" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="r8" value="权限/规则分支" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=12;" vertex="1" parent="lane_runtime">
+          <mxGeometry x="80" y="765" width="160" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="r9" value="HumanConfirmManager&#xa;pending / approved / rejected / timeout" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=12;" vertex="1" parent="lane_runtime">
+          <mxGeometry x="40" y="900" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="r10" value="Final Response&#xa;response_sent / cost / done" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#4B8F63;fontSize=12;" vertex="1" parent="lane_runtime">
+          <mxGeometry x="335" y="900" width="230" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="r11" value="ErrorHandler&#xa;retry / failed / blocked" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=12;" vertex="1" parent="lane_runtime">
+          <mxGeometry x="335" y="1030" width="230" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="c1" value="SemanticMapper&#xa;intent_detected" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EADCF8;strokeColor=#8F62C9;fontSize=12;" vertex="1" parent="lane_cap">
+          <mxGeometry x="45" y="255" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="c2" value="BizRefBuilder&#xa;Reader / BookCopy / FactSet" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EADCF8;strokeColor=#8F62C9;fontSize=12;" vertex="1" parent="lane_cap">
+          <mxGeometry x="45" y="340" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" value="CapabilityGateway&#xa;BizTool / Skill / Workflow / SubAgent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EADCF8;strokeColor=#8F62C9;fontSize=12;" vertex="1" parent="lane_cap">
+          <mxGeometry x="45" y="445" width="250" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="c4" value="Tool Execute&#xa;BizTools / builtin-tools / MCP / Workflow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EADCF8;strokeColor=#8F62C9;fontSize=12;fontStyle=1;" vertex="1" parent="lane_cap">
+          <mxGeometry x="45" y="760" width="250" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="c5" value="工具成功?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=12;" vertex="1" parent="lane_cap">
+          <mxGeometry x="85" y="900" width="160" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="c6" value="还需要下一步?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#4B8F63;fontSize=12;" vertex="1" parent="lane_cap">
+          <mxGeometry x="85" y="1040" width="160" height="95" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s1" value="PostgreSQL&#xa;agent_sessions / tasks / messages&#xa;agent_tool_calls / agent_human_confirms&#xa;agent_audit_events / summaries" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#F5F5F5;strokeColor=#666666;fontSize=11;" vertex="1" parent="lane_store">
+          <mxGeometry x="30" y="80" width="235" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="Redis&#xa;session:* / task:* / sse:*&#xa;audit_stream:* / audit_seq:*&#xa;rule:* / idem:*" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#F8CECC;strokeColor=#B85450;fontSize=11;" vertex="1" parent="lane_store">
+          <mxGeometry x="30" y="265" width="235" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="Milvus&#xa;knowledge_{industryCode}&#xa;tenant partition" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#E1D5E7;strokeColor=#9673A6;fontSize=11;" vertex="1" parent="lane_store">
+          <mxGeometry x="30" y="445" width="235" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="行业业务系统&#xa;Reader / BookCopy / Loan / Fee" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=11;" vertex="1" parent="lane_store">
+          <mxGeometry x="30" y="625" width="235" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="Replay / Resume 数据源&#xa;PostgreSQL facts + Redis hot state" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF0FF;strokeColor=#5769F7;fontSize=11;" vertex="1" parent="lane_store">
+          <mxGeometry x="30" y="1080" width="235" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a1n" value="AuditWriter.record()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#C95F5F;fontSize=12;" vertex="1" parent="lane_audit">
+          <mxGeometry x="35" y="260" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="a2n" value="Redis Stream&#xa;audit_stream:{tenantId}" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#F8CECC;strokeColor=#C95F5F;fontSize=11;" vertex="1" parent="lane_audit">
+          <mxGeometry x="35" y="380" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a3n" value="AuditConsumer&#xa;idempotent persist" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#C95F5F;fontSize=12;" vertex="1" parent="lane_audit">
+          <mxGeometry x="35" y="520" width="200" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="a4n" value="agent_audit_events&#xa;sequence facts" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#F8CECC;strokeColor=#C95F5F;fontSize=11;" vertex="1" parent="lane_audit">
+          <mxGeometry x="35" y="645" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a5n" value="agent_audit_trace_summaries" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#F8CECC;strokeColor=#C95F5F;fontSize=11;" vertex="1" parent="lane_audit">
+          <mxGeometry x="35" y="780" width="200" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="a6n" value="高风险审计持久化门禁&#xa;requireAuditDurability" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=11;" vertex="1" parent="lane_audit">
+          <mxGeometry x="55" y="930" width="160" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#666666;" edge="1" parent="1" source="f1" target="g1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#5769F7;" edge="1" parent="1" source="g1" target="g2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" value="session 写入" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#777777;" edge="1" parent="1" source="g2" target="s1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" value="hot state" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;" edge="1" parent="1" source="g2" target="s2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#666666;" edge="1" parent="1" source="f2" target="g3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" value="task 入队" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="g3" target="r1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" value="message / task 写入" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#777777;" edge="1" parent="1" source="g3" target="s1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="r1" target="r2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" value="SemanticMapper" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#8F62C9;" edge="1" parent="1" source="r2" target="c1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#8F62C9;" edge="1" parent="1" source="c1" target="c2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e11" value="业务对象查询" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#D6B656;" edge="1" parent="1" source="c2" target="s4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#8F62C9;" edge="1" parent="1" source="c2" target="c3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e13" value="envelope" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="c3" target="r3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e14" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="r3" target="r6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e15" value="no / complex" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#6C8EBF;" edge="1" parent="1" source="r3" target="r4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e16" value="memory / prompt" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#777777;" edge="1" parent="1" source="r4" target="s1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e17" value="short memory / rule cache" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;" edge="1" parent="1" source="r4" target="s2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e18" value="knowledge vector" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#9673A6;" edge="1" parent="1" source="r4" target="s3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e19" value="LLM tool calls" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#6C8EBF;" edge="1" parent="1" source="r4" target="r5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e20" value="each tool call" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="r5" target="r6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e21" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#D6B656;" edge="1" parent="1" source="r6" target="r7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e22" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#D6B656;" edge="1" parent="1" source="r7" target="r8"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e23" value="PASS / auto" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="r8" target="c4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e24" value="WARN / high" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;" edge="1" parent="1" source="r8" target="r9"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e25" value="BLOCKED" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;" edge="1" parent="1" source="r8" target="r11"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e26" value="写 agent_human_confirms" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#777777;" edge="1" parent="1" source="r9" target="s1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e27" value="permission_required" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#D6B656;" edge="1" parent="1" source="r9" target="g4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e28" value="SSE" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#D6B656;" edge="1" parent="1" source="g4" target="f3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e29" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;" edge="1" parent="1" source="f4" target="g5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e30" value="approve resumes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="g5" target="c4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e31" value="reject / timeout" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;" edge="1" parent="1" source="g5" target="r11"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e32" value="业务副作用 / 查询" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#8F62C9;" edge="1" parent="1" source="c4" target="s4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e33" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#8F62C9;" edge="1" parent="1" source="c4" target="c5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e34" value="success" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="c5" target="c6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e35" value="failed" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;" edge="1" parent="1" source="c5" target="r11"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e36" value="next" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;dashed=1;" edge="1" parent="1" source="c6" target="r5"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1760" y="1370" /><mxPoint x="1125" y="1370" /></Array></mxGeometry></mxCell>
+        <mxCell id="e37" value="complete" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="c6" target="r10"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e38" value="retry" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;dashed=1;" edge="1" parent="1" source="r11" target="c4"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1220" y="1375" /><mxPoint x="1640" y="1375" /></Array></mxGeometry></mxCell>
+        <mxCell id="e39" value="done / error / warning" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#D6B656;" edge="1" parent="1" source="r10" target="g4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e40" value="Last-Event-ID 补发" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#D6B656;dashed=1;" edge="1" parent="1" source="g4" target="s1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e41" value="audit every step" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;dashed=1;" edge="1" parent="1" source="r1" target="a1n"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e42" value="audit every step" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;dashed=1;" edge="1" parent="1" source="r6" target="a1n"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e43" value="audit every step" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;dashed=1;" edge="1" parent="1" source="c4" target="a1n"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e44" value="XADD" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;" edge="1" parent="1" source="a1n" target="a2n"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e45" value="consume" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;" edge="1" parent="1" source="a2n" target="a3n"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e46" value="persist" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;" edge="1" parent="1" source="a3n" target="a4n"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e47" value="project" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;" edge="1" parent="1" source="a3n" target="a5n"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e48" value="write PG" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;" edge="1" parent="1" source="a4n" target="s1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e49" value="write PG" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;" edge="1" parent="1" source="a5n" target="s1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e50" value="audit query / replay" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;" edge="1" parent="1" source="g6" target="s1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e51" value="high-risk gate" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;" edge="1" parent="1" source="a3n" target="a6n"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

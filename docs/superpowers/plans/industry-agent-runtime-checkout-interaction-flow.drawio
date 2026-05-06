@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram name="扫码借书完整交互链路">
+    <mxGraphModel dx="2400" dy="1700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="示例：扫码借书，读者有逾期 WARN，人工确认后执行 checkout_book" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="420" y="20" width="1560" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="绿色：正常主链路　黄色：判断/规则　红色：人工确认/异常　紫色：工具/行业能力　灰色：数据源　虚线：循环或异步链路" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F6F6F3;strokeColor=#999999;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="520" y="78" width="1360" height="42" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n1" value="1. 前端提交消息&#xa;POST /sessions/:id/messages&#xa;input: 扫码借书，读者A，馆藏B" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D77757;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="185" width="250" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" value="2. API 中间件&#xa;Auth / Tenant / Idempotency&#xa;生成 requestId" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#5769F7;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="185" width="230" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" value="3. 写入请求事实&#xa;agent_messages(user)&#xa;agent_tasks(queued)&#xa;Redis task hot state" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#5769F7;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="740" y="185" width="240" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n4" value="4. AgentRuntime.run&#xa;创建 SessionContext&#xa;挂载 ContextEnvelope" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#4B8F63;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="185" width="240" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="n5" value="5. SemanticMapper&#xa;scene=CIRCULATION_CHECKOUT&#xa;confidence=0.97&#xa;pathType=fast" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EADCF8;strokeColor=#8F62C9;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1420" y="185" width="250" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="n6" value="6. BizRefBuilder&#xa;读取 Reader A / BookCopy B&#xa;构建 BizRef + FactSet" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EADCF8;strokeColor=#8F62C9;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1780" y="185" width="250" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="bizdb" value="行业业务系统&#xa;Reader: overdueCount=2&#xa;BookCopy: AVAILABLE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="2070" y="185" width="230" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="d_fast" value="7. 快路径命中?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="380" width="180" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="slow" value="慢路径分支&#xa;QueryRuntime → Prompt/Memory/Knowledge → LLM&#xa;缺参数时追问；复杂争议时规划" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="380" width="310" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_loop" value="ToolLoop 循环&#xa;模型决定工具 → 执行 → 结果回传 → 下一步" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#4B8F63;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1710" y="380" width="290" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="subagent" value="SubAgent 分支&#xa;状态争议 / 费用争议 / 异常工单&#xa;子 Agent 继承 traceId" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EADCF8;strokeColor=#8F62C9;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="2045" y="380" width="260" height="105" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rule" value="8. RuleEngine.check(checkout_book)&#xa;读取 session 绑定 ruleVersion&#xa;结果: WARN" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="790" y="575" width="280" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="rule_decision" value="规则结果" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1125" y="575" width="155" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="blocked" value="BLOCKED 分支&#xa;不执行工具&#xa;TaskStatus=failed/rejected&#xa;SSE error" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1335" y="575" width="230" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="perm" value="9. PermissionGate&#xa;medium + WARN&#xa;requiredConfirmLevel=explicit_confirm" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="790" y="745" width="280" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="perm_decision" value="确认等级" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1125" y="745" width="155" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="auto" value="auto 分支&#xa;low 或 medium+PASS&#xa;直接执行工具" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#4B8F63;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1335" y="745" width="230" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="hitl" value="10. HumanConfirmManager&#xa;写 agent_human_confirms(pending)&#xa;SSE permission_required" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="790" y="925" width="300" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="frontend_confirm" value="11. 馆员确认卡片&#xa;approve / reject / timeout" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D77757;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="925" width="250" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="confirm_decision" value="确认结果" style="rhombus;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1125" y="925" width="155" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="reject" value="reject / timeout 分支&#xa;更新 agent_human_confirms&#xa;TaskStatus=rejected/timeout&#xa;SSE done" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1335" y="925" width="250" height="105" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tool" value="12. Tool Execute&#xa;checkout_book(readerId=A, copyId=B)&#xa;写 agent_tool_calls(executing)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EADCF8;strokeColor=#8F62C9;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="790" y="1115" width="310" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="checkout_api" value="图书馆借阅服务&#xa;libraryApi.checkout()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="1120" width="250" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_ok" value="工具成功?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="1120" width="150" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="retry" value="可重试失败&#xa;ErrorHandler.retry&#xa;写 error audit&#xa;回到 Tool Execute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1375" y="1115" width="230" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="fail" value="不可重试失败&#xa;TaskStatus=failed&#xa;SSE error" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1665" y="1115" width="220" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="next" value="还需要下一步?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#4B8F63;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="1310" width="150" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="response" value="13. Final Response&#xa;写 assistant message&#xa;TaskStatus=succeeded&#xa;SSE done" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#4B8F63;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="790" y="1310" width="300" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="sse" value="SSE Stream&#xa;task_queued / intent_detected / permission_required&#xa;tool_completed / done" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="1320" width="300" height="95" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pg" value="PostgreSQL&#xa;agent_messages / agent_tasks&#xa;agent_human_confirms&#xa;agent_tool_calls&#xa;agent_audit_events / summaries" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#F5F5F5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1850" y="875" width="240" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="redis" value="Redis&#xa;task hot state&#xa;audit_stream / audit_seq&#xa;sse / idempotency / rule cache" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#F8CECC;strokeColor=#B85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1850" y="1070" width="240" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="audit" value="AuditWriter → Redis Stream → AuditConsumer → PostgreSQL&#xa;所有关键节点记录 request / intent / context / rule / permission / human_confirm / tool / response" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#C95F5F;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1750" y="1320" width="450" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="replay" value="Replay / SSE reconnect&#xa;Last-Event-ID → agent_audit_events&#xa;只回放展示，不重新执行工具" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF0FF;strokeColor=#5769F7;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1750" y="1490" width="450" height="95" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#666666;" edge="1" parent="1" source="n1" target="n2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#5769F7;" edge="1" parent="1" source="n2" target="n3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="n3" target="n4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#8F62C9;" edge="1" parent="1" source="n4" target="n5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#8F62C9;" edge="1" parent="1" source="n5" target="n6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" value="查询业务对象" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#D6B656;" edge="1" parent="1" source="n6" target="bizdb"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" value="ContextEnvelope" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="n6" target="d_fast"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" value="否" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#6C8EBF;" edge="1" parent="1" source="d_fast" target="slow"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" value="LLM tool call" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#6C8EBF;" edge="1" parent="1" source="slow" target="tool_loop"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" value="争议/长流程" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#8F62C9;" edge="1" parent="1" source="tool_loop" target="subagent"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e11" value="是" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="d_fast" target="rule"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e12" value="每次 tool call" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;dashed=1;" edge="1" parent="1" source="tool_loop" target="rule"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1820" y="540" /><mxPoint x="930" y="540" /></Array></mxGeometry></mxCell>
+        <mxCell id="e13" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#D6B656;" edge="1" parent="1" source="rule" target="rule_decision"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e14" value="BLOCKED" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;" edge="1" parent="1" source="rule_decision" target="blocked"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e15" value="PASS/WARN" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#D6B656;" edge="1" parent="1" source="rule_decision" target="perm"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e16" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#D6B656;" edge="1" parent="1" source="perm" target="perm_decision"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e17" value="auto" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="perm_decision" target="auto"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e18" value="explicit_confirm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;" edge="1" parent="1" source="perm_decision" target="hitl"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e19" value="permission_required SSE" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#D6B656;" edge="1" parent="1" source="hitl" target="frontend_confirm"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e20" value="Confirm API" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;" edge="1" parent="1" source="frontend_confirm" target="confirm_decision"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e21" value="reject/timeout" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;" edge="1" parent="1" source="confirm_decision" target="reject"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e22" value="approve" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="confirm_decision" target="tool"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e23" value="auto execute" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="auto" target="tool"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e24" value="调用借阅服务" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#D6B656;" edge="1" parent="1" source="tool" target="checkout_api"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e25" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#8F62C9;" edge="1" parent="1" source="tool" target="tool_ok"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e26" value="retryable" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;" edge="1" parent="1" source="tool_ok" target="retry"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e27" value="non-retryable" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;" edge="1" parent="1" source="tool_ok" target="fail"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e28" value="retry loop" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;dashed=1;" edge="1" parent="1" source="retry" target="tool"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1485" y="1270" /><mxPoint x="945" y="1270" /></Array></mxGeometry></mxCell>
+        <mxCell id="e29" value="success" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="tool_ok" target="next"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e30" value="complete" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;" edge="1" parent="1" source="next" target="response"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e31" value="next step loop" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#4B8F63;dashed=1;" edge="1" parent="1" source="next" target="tool_loop"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1225" y="1480" /><mxPoint x="1855" y="1480" /></Array></mxGeometry></mxCell>
+        <mxCell id="e32" value="SSE done" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#D6B656;" edge="1" parent="1" source="response" target="sse"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e33" value="读写任务/确认/工具记录" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#777777;" edge="1" parent="1" source="tool" target="pg"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e34" value="热状态 / 队列" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#B85450;" edge="1" parent="1" source="hitl" target="redis"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e35" value="audit every step" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;dashed=1;" edge="1" parent="1" source="n4" target="audit"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e36" value="audit every step" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;dashed=1;" edge="1" parent="1" source="rule" target="audit"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e37" value="audit every step" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;dashed=1;" edge="1" parent="1" source="tool" target="audit"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e38" value="persist audit facts" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;" edge="1" parent="1" source="audit" target="pg"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e39" value="XADD / INCR" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#C95F5F;" edge="1" parent="1" source="audit" target="redis"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e40" value="Last-Event-ID 补发" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#5769F7;dashed=1;" edge="1" parent="1" source="sse" target="replay"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
