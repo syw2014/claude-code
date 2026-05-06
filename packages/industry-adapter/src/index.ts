@@ -1,3 +1,6 @@
 export * from './types.js'
 export * from './registry.js'
 export * from './pipeline.js'
+export * from './base/BaseSemanticMapper.js'
+export * from './base/BaseBizRefBuilder.js'
+export * from './base/BaseCapabilityGateway.js'
