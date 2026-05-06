@@ -4,11 +4,8 @@ import type {
   SessionStatus,
   TaskStatus,
   ToolCallStatus,
-  ConfirmStatus,
-  PermissionMode,
   TokenCounts,
   CostState,
-  PlanState,
 } from 'src/runtime/types'
 
 describe('runtime types', () => {
