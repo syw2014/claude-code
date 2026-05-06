@@ -1,6 +1,6 @@
 // src/runtime/permission/PermissionGate.ts
-import type { UUID, ConfirmRequest, ConfirmStatus } from '../types.js'
-import type { PermissionLevel, ConfirmLevel, ApproverRole, RuleCheckResult } from '@claude-code-best/industry-adapter'
+import type { ConfirmRequest } from '../types.js'
+import type { PermissionLevel, RuleCheckResult } from '@claude-code-best/industry-adapter'
 import type { SessionContext } from '../context/SessionContext.js'
 
 export type PermissionDecision =
