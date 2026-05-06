@@ -40,3 +40,36 @@ describe('Migration 001_core.sql', () => {
     expect(sql).toContain('sequence    BIGINT')
   })
 })
+
+describe('Migration 002_audit.sql', () => {
+  const sql = readMigration('002_audit.sql')
+
+  test('包含 agent_tool_calls 表', () => {
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS agent_tool_calls')
+    expect(sql).toContain("'common_tool','biz_tool','mcp_tool','workflow_tool'")
+    expect(sql).toContain('duration_ms      INTEGER')
+  })
+
+  test('包含 agent_human_confirms 表', () => {
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS agent_human_confirms')
+    expect(sql).toContain('expires_at       TIMESTAMPTZ NOT NULL')
+    expect(sql).toContain("WHERE status = 'pending'")
+  })
+
+  test('agent_audit_events 含 GIN 索引', () => {
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS agent_audit_events')
+    expect(sql).toContain('USING GIN (payload)')
+    expect(sql).toContain('sequence        BIGINT      NOT NULL')
+  })
+
+  test('audit_events sequence 唯一约束存在', () => {
+    expect(sql).toContain('CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_events_sequence')
+    expect(sql).toContain('(tenant_id, trace_id, sequence)')
+  })
+
+  test('包含 agent_audit_trace_summaries 表', () => {
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS agent_audit_trace_summaries')
+    expect(sql).toContain('has_human_confirm BOOLEAN')
+    expect(sql).toContain('has_high_risk    BOOLEAN')
+  })
+})
