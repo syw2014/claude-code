@@ -2,7 +2,7 @@ import { describe, test, expect } from 'bun:test'
 import type { SessionContext } from 'src/runtime/context/SessionContext'
 import { createEnvelope } from 'src/runtime/context/ContextEnvelope'
 import type { IndustryAdapter, RuleSet } from '@claude-code-best/industry-adapter'
-import type { SessionStore, MemoryStore, RuleStore, PromptStore, KnowledgeStore, AuditWriter } from 'src/runtime/stores'
+import type { AuditWriter } from 'src/runtime/stores'
 
 // Minimal stub factories — only used to satisfy the interface at type-check time
 function stubAdapter(): IndustryAdapter {
