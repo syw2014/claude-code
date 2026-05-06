@@ -3,7 +3,7 @@ import type { ConfirmDecisionRequest } from 'src/server/schemas/api'
 import type { AuthContext } from '../middleware/auth.js'
 
 export async function handleConfirmDecision(
-  auth: AuthContext,
+  _auth: AuthContext,
   _sessionId: string,
   body: ConfirmDecisionRequest,
   requestId: string
