@@ -1,0 +1,15 @@
+name: renew-flow
+description: 图书馆续借全流程
+industry: library
+steps:
+  - id: query_reader_step
+    tool: query_reader
+    params:
+      readerId: "{{readerId}}"
+    onError: abort
+  - id: renew_step
+    tool: renew_book
+    params:
+      bookId: "{{bookId}}"
+      readerId: "{{readerId}}"
+    onError: abort

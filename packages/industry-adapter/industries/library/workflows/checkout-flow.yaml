@@ -1,0 +1,15 @@
+name: checkout-flow
+description: 图书馆借书全流程
+industry: library
+steps:
+  - id: query_reader_step
+    tool: query_reader
+    params:
+      readerId: "{{readerId}}"
+    onError: abort
+  - id: checkout_step
+    tool: checkout_book
+    params:
+      bookId: "{{bookId}}"
+      readerId: "{{readerId}}"
+    onError: abort
