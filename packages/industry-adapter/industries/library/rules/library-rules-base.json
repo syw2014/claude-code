@@ -1,0 +1,58 @@
+{
+  "version": "1.0.0",
+  "industryCode": "library",
+  "rules": [
+    {
+      "ruleId": "LIB-001",
+      "description": "读者账户必须激活才能借书",
+      "severity": "block",
+      "confirmLevel": "auto",
+      "conditions": [
+        { "field": "operation", "op": "==", "value": "checkout_book" },
+        { "field": "bizRefs.reader.status", "op": "==", "value": "suspended" }
+      ]
+    },
+    {
+      "ruleId": "LIB-002",
+      "description": "读者有逾期未还书时需要人工确认借书",
+      "severity": "warn",
+      "confirmLevel": "explicit_confirm",
+      "approverRole": "librarian",
+      "conditions": [
+        { "field": "operation", "op": "==", "value": "checkout_book" },
+        { "field": "context.overdueCount", "op": "exists" }
+      ]
+    },
+    {
+      "ruleId": "LIB-003",
+      "description": "免罚款操作需要管理员审批",
+      "severity": "warn",
+      "confirmLevel": "supervisor_approval",
+      "approverRole": "supervisor",
+      "conditions": [
+        { "field": "operation", "op": "==", "value": "waive_fee" }
+      ]
+    },
+    {
+      "ruleId": "LIB-004",
+      "description": "特殊馆藏授权需要馆员确认",
+      "severity": "warn",
+      "confirmLevel": "explicit_confirm",
+      "approverRole": "librarian",
+      "conditions": [
+        { "field": "operation", "op": "==", "value": "special_auth" }
+      ]
+    },
+    {
+      "ruleId": "LIB-005",
+      "description": "普通读者不能申请特殊馆藏归档访问",
+      "severity": "block",
+      "confirmLevel": "auto",
+      "conditions": [
+        { "field": "operation", "op": "==", "value": "special_auth" },
+        { "field": "userRole", "op": "==", "value": "reader" },
+        { "field": "context.authType", "op": "==", "value": "archive" }
+      ]
+    }
+  ]
+}
