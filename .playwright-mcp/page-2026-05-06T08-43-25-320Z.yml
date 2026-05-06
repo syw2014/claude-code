@@ -1,0 +1,148 @@
+- generic [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - img [ref=e12] [cursor=pointer]
+          - button [ref=e16] [cursor=pointer]:
+            - img [ref=e18]
+        - generic [ref=e22]:
+          - generic [ref=e24]:
+            - generic [ref=e25]:
+              - generic [ref=e27]:
+                - generic [ref=e28]: jerryshi
+                - img [ref=e29]
+              - generic [ref=e33] [cursor=pointer]: 测试 feishu 画板上传 drawio
+              - button [ref=e34] [cursor=pointer]:
+                - img [ref=e36]
+            - generic [ref=e39]:
+              - button "行业 Agent 架构" [ref=e41] [cursor=pointer]:
+                - img [ref=e43]
+                - text: 行业 Agent 架构
+              - generic [ref=e47] [cursor=pointer]: 已经保存到云端
+          - generic [ref=e51]:
+            - generic [ref=e52]:
+              - button "分享" [ref=e54] [cursor=pointer]:
+                - img [ref=e58]
+                - generic [ref=e60]: 分享
+              - button "编辑" [ref=e64] [cursor=pointer]:
+                - generic [ref=e65]:
+                  - img [ref=e68]
+                  - generic [ref=e70]: 编辑
+                - img [ref=e73]
+            - img [ref=e79] [cursor=pointer]
+            - button [ref=e82] [cursor=pointer]:
+              - img [ref=e84]
+            - button [ref=e88] [cursor=pointer]:
+              - img [ref=e90]
+            - button [ref=e94] [cursor=pointer]:
+              - img [ref=e96]
+      - generic [ref=e108]:
+        - generic [ref=e117]:
+          - generic [ref=e118]:
+            - generic [ref=e119]:
+              - generic [ref=e123] [cursor=pointer]:
+                - img [ref=e125]
+                - generic [ref=e128]: 添加图标
+              - generic [ref=e131] [cursor=pointer]:
+                - img [ref=e132]
+                - generic [ref=e134]: 添加封面
+            - heading "测试 feishu 画板上传 drawio" [level=1] [ref=e135]:
+              - generic [ref=e137]: 测试 feishu 画板上传 drawio
+            - generic [ref=e140]:
+              - generic [ref=e147] [cursor=pointer]:
+                - img [ref=e149]
+                - generic [ref=e151]: jerryshi
+              - generic [ref=e153]: 今天修改
+          - generic [ref=e174]:
+            - generic [ref=e176]:
+              - textbox
+            - button "画板内评论" [ref=e182] [cursor=pointer]:
+              - img [ref=e184]
+              - generic [ref=e187]: 画板内评论
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                    - textbox "搜索"
+                  - generic: 0 个结果
+                  - button [disabled]:
+                    - generic:
+                      - img
+                  - button:
+                    - generic:
+                      - img
+            - generic:
+              - generic:
+                - img
+                - generic: 空白画板
+        - generic [ref=e195]:
+          - generic [ref=e196]: 评论（0）
+          - img [ref=e200] [cursor=pointer]
+        - button [ref=e205] [cursor=pointer]:
+          - img [ref=e207]
+        - generic [ref=e213]:
+          - img [ref=e216]
+          - generic [ref=e227]: 真诚点赞，手留余香
+        - generic [ref=e234]:
+          - generic [ref=e236]: 输入评论
+          - generic [ref=e239]:
+            - img [ref=e242] [cursor=pointer]
+            - button [ref=e244] [cursor=pointer]:
+              - img [ref=e246]
+    - generic:
+      - generic:
+        - generic:
+          - menu:
+            - generic:
+              - generic:
+                - menuitem "上传日志":
+                  - generic:
+                    - generic:
+                      - img
+                  - generic: 上传日志
+              - generic:
+                - menuitem "联系客服":
+                  - generic:
+                    - generic:
+                      - img
+                  - generic: 联系客服
+              - generic:
+                - generic:
+                  - menuitem "功能更新":
+                    - generic:
+                      - generic:
+                        - img
+                    - generic: 功能更新
+              - generic:
+                - menuitem "帮助中心":
+                  - generic:
+                    - generic:
+                      - img
+                  - generic: 帮助中心
+              - generic:
+                - menuitem "效率指南":
+                  - generic:
+                    - generic:
+                      - img
+                  - generic: 效率指南
+        - img [ref=e250] [cursor=pointer]
+  - textbox [active] [ref=e253]
+  - generic [ref=e266]:
+    - img [ref=e269]
+    - img [ref=e273]
+  - generic [ref=e277]:
+    - generic [ref=e281] [cursor=pointer]:
+      - img [ref=e283]
+      - text: 编辑
+    - img [ref=e289]
+    - img [ref=e296] [cursor=pointer]
+    - img [ref=e304] [cursor=pointer]
+    - generic [ref=e309]: 100%
+    - img [ref=e314] [cursor=pointer]
+    - img [ref=e321] [cursor=pointer]
+    - img [ref=e327] [cursor=pointer]
+    - img [ref=e334] [cursor=pointer]

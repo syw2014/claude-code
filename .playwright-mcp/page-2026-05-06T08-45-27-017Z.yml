@@ -1,0 +1,302 @@
+- generic [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e339]:
+      - generic [ref=e340]:
+        - button [ref=e341] [cursor=pointer]:
+          - img [ref=e343]
+        - generic [ref=e345]:
+          - img [ref=e347] [cursor=pointer]
+          - heading "飞书云文档" [level=1] [ref=e351] [cursor=pointer]
+      - generic [ref=e353]:
+        - generic [ref=e357]:
+          - img [ref=e360]
+          - generic [ref=e362] [cursor=pointer]: 搜索
+        - generic [ref=e364]:
+          - generic [ref=e365]:
+            - button "主页" [ref=e367]:
+              - generic [ref=e368]:
+                - img [ref=e369]
+                - generic [ref=e371]: 主页
+            - button "云盘 我的空间和共享空间搬到云盘了" [ref=e373]:
+              - generic [ref=e374]:
+                - img [ref=e375]
+                - generic [ref=e377]: 云盘
+              - generic [ref=e378]:
+                - generic [ref=e379]: 我的空间和共享空间搬到云盘了
+                - img [ref=e381]
+            - button "知识库" [ref=e384]:
+              - generic [ref=e385]:
+                - img [ref=e386]
+                - generic [ref=e388]: 知识库
+            - button "智能纪要" [ref=e390]:
+              - generic [ref=e391]:
+                - img [ref=e392]
+                - generic [ref=e395]: 智能纪要
+          - generic [ref=e396]:
+            - generic [ref=e397]:
+              - button "置顶文档" [ref=e399]:
+                - img [ref=e401]
+                - generic [ref=e403]: 置顶文档
+                - img [ref=e405]
+              - list [ref=e409]:
+                - generic [ref=e411] [cursor=pointer]:
+                  - button [ref=e413]:
+                    - img [ref=e414]
+                  - img [ref=e421]
+                  - button "网站页面结构设计" [ref=e424]:
+                    - generic [ref=e425]: 网站页面结构设计
+                - generic [ref=e427] [cursor=pointer]:
+                  - img [ref=e432]
+                  - button "JerryShi的随手记" [ref=e435]:
+                    - generic [ref=e436]: JerryShi的随手记
+            - button "置顶知识库" [ref=e440]:
+              - img [ref=e442]
+              - generic [ref=e444]: 置顶知识库
+              - img [ref=e446]
+            - generic [ref=e449]:
+              - button "我的文档库" [ref=e451]:
+                - img [ref=e453]
+                - generic [ref=e455]: 我的文档库
+                - img [ref=e457]
+              - button [ref=e460] [cursor=pointer]:
+                - img [ref=e462]
+        - generic [ref=e464]:
+          - img [ref=e470]
+          - img [ref=e479]
+          - img [ref=e488]
+    - generic [ref=e5]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - img [ref=e12] [cursor=pointer]
+          - button [ref=e16] [cursor=pointer]:
+            - img [ref=e18]
+        - generic [ref=e22]:
+          - generic [ref=e24]:
+            - generic [ref=e25]:
+              - generic [ref=e27]:
+                - generic [ref=e28]: jerryshi
+                - img [ref=e29]
+              - generic [ref=e33] [cursor=pointer]: 测试 feishu 画板上传 drawio
+              - button [ref=e34] [cursor=pointer]:
+                - img [ref=e36]
+            - generic [ref=e39]:
+              - button "行业 Agent 架构" [ref=e41] [cursor=pointer]:
+                - img [ref=e43]
+                - text: 行业 Agent 架构
+              - generic [ref=e47] [cursor=pointer]: 已经保存到云端
+          - generic [ref=e51]:
+            - generic [ref=e52]:
+              - button "分享" [ref=e54] [cursor=pointer]:
+                - img [ref=e58]
+                - generic [ref=e60]: 分享
+              - button "编辑" [ref=e64] [cursor=pointer]:
+                - generic [ref=e65]:
+                  - img [ref=e68]
+                  - generic [ref=e70]: 编辑
+                - img [ref=e73]
+            - img [ref=e79] [cursor=pointer]
+            - button [ref=e82] [cursor=pointer]:
+              - img [ref=e84]
+            - button [ref=e88] [cursor=pointer]:
+              - img [ref=e90]
+            - button [ref=e94] [cursor=pointer]:
+              - img [ref=e96]
+      - generic [ref=e108]:
+        - generic [ref=e118]:
+          - generic [ref=e119]:
+            - generic [ref=e123] [cursor=pointer]:
+              - img [ref=e125]
+              - generic [ref=e128]: 添加图标
+            - generic [ref=e131] [cursor=pointer]:
+              - img [ref=e132]
+              - generic [ref=e134]: 添加封面
+          - heading "测试 feishu 画板上传 drawio" [level=1] [ref=e135]:
+            - generic [ref=e137]: 测试 feishu 画板上传 drawio
+          - generic [ref=e140]:
+            - generic [ref=e147] [cursor=pointer]:
+              - img [ref=e149]
+              - generic [ref=e151]: jerryshi
+            - generic [ref=e153]: 今天修改
+        - generic [ref=e195]:
+          - generic [ref=e196]: 评论（0）
+          - img [ref=e200] [cursor=pointer]
+        - button [ref=e205] [cursor=pointer]:
+          - img [ref=e207]
+        - generic [ref=e213]:
+          - img [ref=e216]
+          - generic [ref=e227]: 真诚点赞，手留余香
+        - generic [ref=e234]:
+          - generic [ref=e236]: 输入评论
+          - generic [ref=e239]:
+            - img [ref=e242] [cursor=pointer]
+            - button [ref=e244] [cursor=pointer]:
+              - img [ref=e246]
+    - generic:
+      - generic:
+        - generic:
+          - menu:
+            - generic:
+              - generic:
+                - menuitem "上传日志":
+                  - generic:
+                    - generic:
+                      - img
+                  - generic: 上传日志
+              - generic:
+                - menuitem "联系客服":
+                  - generic:
+                    - generic:
+                      - img
+                  - generic: 联系客服
+              - generic:
+                - generic:
+                  - menuitem "功能更新":
+                    - generic:
+                      - generic:
+                        - img
+                    - generic: 功能更新
+              - generic:
+                - menuitem "帮助中心":
+                  - generic:
+                    - generic:
+                      - img
+                  - generic: 帮助中心
+              - generic:
+                - menuitem "效率指南":
+                  - generic:
+                    - generic:
+                      - img
+                  - generic: 效率指南
+        - img [ref=e250] [cursor=pointer]
+  - textbox [ref=e253]
+  - generic [ref=e493]:
+    - img [ref=e496]
+    - img [ref=e500]
+  - generic [ref=e174]:
+    - generic [active] [ref=e176]:
+      - textbox
+    - generic:
+      - generic:
+        - generic [ref=e502]:
+          - button "退出" [ref=e503] [cursor=pointer]:
+            - img [ref=e506]
+            - text: 退出
+          - generic [ref=e509]:
+            - img [ref=e510]
+            - generic [ref=e512]: 画板
+        - generic [ref=e513]:
+          - generic [ref=e514]:
+            - button "分享" [ref=e516] [cursor=pointer]:
+              - img [ref=e519]
+              - text: 分享
+            - button "编辑" [ref=e523] [cursor=pointer]:
+              - generic [ref=e524]:
+                - img [ref=e525]
+                - text: 编辑
+              - img [ref=e529]
+            - button [ref=e533] [cursor=pointer]:
+              - img [ref=e535]
+            - button [ref=e538] [cursor=pointer]:
+              - img [ref=e539]
+          - button [ref=e545] [cursor=pointer]:
+            - img [ref=e547]
+      - generic [ref=e549]:
+        - button [ref=e553] [cursor=pointer]:
+          - img [ref=e555]
+        - generic [ref=e560]:
+          - button [ref=e565] [cursor=pointer]:
+            - img [ref=e566]
+          - button [ref=e572] [cursor=pointer]:
+            - img [ref=e573]
+          - button [ref=e578] [cursor=pointer]:
+            - img [ref=e579]
+          - button [ref=e584] [cursor=pointer]:
+            - img [ref=e585]
+          - button [ref=e590] [cursor=pointer]:
+            - img [ref=e591]
+          - button [ref=e598] [cursor=pointer]:
+            - img [ref=e599]
+          - button [ref=e605] [cursor=pointer]:
+            - img [ref=e606]
+          - button [ref=e612] [cursor=pointer]:
+            - img [ref=e614]
+          - button [ref=e619] [cursor=pointer]:
+            - img [ref=e620]
+          - button [ref=e627] [cursor=pointer]:
+            - img [ref=e628]
+          - button [ref=e632] [cursor=pointer]:
+            - img [ref=e633]
+        - button [ref=e640] [cursor=pointer]:
+          - img [ref=e641]
+      - generic [ref=e644]:
+        - generic [ref=e645]:
+          - button [disabled] [ref=e646]:
+            - generic:
+              - img
+          - button [disabled] [ref=e648]:
+            - generic:
+              - img
+        - generic [ref=e649]:
+          - button [ref=e650] [cursor=pointer]:
+            - img [ref=e651]
+          - button [ref=e654] [cursor=pointer]:
+            - img [ref=e656]
+          - generic [ref=e658] [cursor=pointer]: 100%
+          - button [ref=e659] [cursor=pointer]:
+            - img [ref=e661]
+        - button [ref=e665] [cursor=pointer]:
+          - img [ref=e667]
+    - generic [ref=e670]:
+      - generic [ref=e671]:
+        - generic [ref=e672]:
+          - generic [ref=e673]: 从模板创建
+          - button [ref=e674] [cursor=pointer]:
+            - img [ref=e676]
+        - generic [ref=e678]: 用 ↑↓ 键切换预览模板，点击插入模板
+      - generic [ref=e681]:
+        - generic [ref=e682]:
+          - generic [ref=e683] [cursor=pointer]:
+            - img [ref=e685]
+            - generic [ref=e689]: 时间线
+          - generic [ref=e690] [cursor=pointer]:
+            - img [ref=e692]
+            - generic [ref=e697]: 组织架构图
+          - generic [ref=e698] [cursor=pointer]:
+            - img [ref=e700]
+            - generic [ref=e704]: 系统架构图
+          - generic [ref=e705] [cursor=pointer]:
+            - img [ref=e707]
+            - generic [ref=e710]: 思维导图
+          - generic [ref=e711] [cursor=pointer]:
+            - img [ref=e713]
+            - generic [ref=e721]: 增长飞轮
+          - generic [ref=e722] [cursor=pointer]:
+            - img [ref=e724]
+            - generic [ref=e727]: 金字塔
+          - generic [ref=e728] [cursor=pointer]:
+            - img [ref=e730]
+            - generic [ref=e733]: 移动端线框原型图
+          - generic [ref=e734] [cursor=pointer]:
+            - img [ref=e736]
+            - generic [ref=e739]: 快速复盘
+        - button "更多模板" [ref=e741] [cursor=pointer]
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - img
+            - textbox "搜索"
+          - generic: 0 个结果
+          - button:
+            - generic:
+              - img
+          - button:
+            - generic:
+              - img
+    - generic:
+      - generic: 双击开始画图，或选择
+      - button "模板" [ref=e742] [cursor=pointer]:
+        - img [ref=e744]
+        - text: 模板
