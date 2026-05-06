@@ -7,18 +7,26 @@ import type { SessionRoutesDeps } from './routes/sessions.js'
 import { handleSendMessage } from './routes/messages.js'
 import type { MessageRoutesDeps } from './routes/messages.js'
 import { handleConfirmDecision } from './routes/confirms.js'
+import { handleListRuleVersions, handlePublishRuleVersion } from './routes/rules.js'
+import type { RuleRoutesDeps } from './routes/rules.js'
+import { handleListPromptTemplates, handleUpsertPromptTemplate } from './routes/prompts.js'
+import type { PromptRoutesDeps } from './routes/prompts.js'
 import { createSseResponse } from '../sse/SseEventWriter.js'
 import { SseConnectionRegistry } from '../sse/SseConnectionRegistry.js'
 import { SessionStateStore } from '../../runtime/state/SessionStateStore.js'
 import { InMemoryTaskStateStore } from '../../runtime/state/TaskStateStore.js'
 import { InMemorySessionRepository } from '../../persistence/db/repositories/SessionRepository.js'
 import { InMemoryTaskRepository } from '../../persistence/db/repositories/TaskRepository.js'
+import { InMemoryRuleRepository } from '../../persistence/db/repositories/RuleRepository.js'
+import { InMemoryPromptRepository } from '../../persistence/db/repositories/PromptRepository.js'
 import type { CreateSessionRequest, SendMessageRequest, ConfirmDecisionRequest } from 'src/server/schemas/api'
 
 export interface ServerDeps {
   sessionRoutes: SessionRoutesDeps
   messageRoutes: MessageRoutesDeps
   sseRegistry: SseConnectionRegistry
+  ruleRoutes: RuleRoutesDeps
+  promptRoutes: PromptRoutesDeps
 }
 
 function requestId(): string {
@@ -120,6 +128,38 @@ export function createRouter(deps: ServerDeps) {
       }
     }
 
+    // Rules routes: /api/v1/rules/:industryCode/versions
+    const rulesMatch = path.match(/^\/api\/v1\/rules\/([^/]+)\/versions$/)
+    if (rulesMatch) {
+      const industryCode = rulesMatch[1]!
+
+      if (method === 'GET') {
+        return handleListRuleVersions(deps.ruleRoutes, auth, industryCode, reqId)
+      }
+
+      if (method === 'POST') {
+        let body: unknown
+        try { body = await req.json() } catch { return Response.json({ error: { code: 'INTERNAL_ERROR', message: 'Invalid JSON', retryable: false } }, { status: 400 }) }
+        return handlePublishRuleVersion(deps.ruleRoutes, auth, industryCode, body as Record<string, unknown>, reqId)
+      }
+    }
+
+    // Prompts routes: /api/v1/prompts/:industryCode/templates
+    const promptsMatch = path.match(/^\/api\/v1\/prompts\/([^/]+)\/templates$/)
+    if (promptsMatch) {
+      const industryCode = promptsMatch[1]!
+
+      if (method === 'GET') {
+        return handleListPromptTemplates(deps.promptRoutes, auth, industryCode, reqId)
+      }
+
+      if (method === 'POST') {
+        let body: unknown
+        try { body = await req.json() } catch { return Response.json({ error: { code: 'INTERNAL_ERROR', message: 'Invalid JSON', retryable: false } }, { status: 400 }) }
+        return handleUpsertPromptTemplate(deps.promptRoutes, auth, industryCode, body as Record<string, unknown>, reqId)
+      }
+    }
+
     return Response.json({ error: { code: 'INTERNAL_ERROR', message: 'Not found', retryable: false } }, { status: 404 })
   }
 }
@@ -130,10 +170,14 @@ export function createServerDeps(): ServerDeps {
   const sessionStateStore = new SessionStateStore()
   const taskStateStore = new InMemoryTaskStateStore()
   const sseRegistry = new SseConnectionRegistry()
+  const ruleRepo = new InMemoryRuleRepository()
+  const promptRepo = new InMemoryPromptRepository()
 
   return {
     sessionRoutes: { sessionRepo, sessionStateStore },
     messageRoutes: { taskRepo, sessionStateStore, taskStateStore },
     sseRegistry,
+    ruleRoutes: { ruleRepo },
+    promptRoutes: { promptRepo },
   }
 }

@@ -16,6 +16,7 @@ export interface PromptRepository extends PromptStore {
   upsert(template: Omit<PromptTemplate, 'createdAt'>): Promise<PromptTemplate>
   getById(id: string): Promise<PromptTemplate | null>
   setActive(id: string, isActive: boolean): Promise<void>
+  listTemplates(industryCode: string): Promise<Array<{ id: string; version: number }>>
 }
 
 /**
@@ -64,6 +65,17 @@ export class InMemoryPromptRepository implements PromptRepository {
     // Return empty array - this is a stub implementation
     // In production, this would return intent-specific templates
     return []
+  }
+
+  async listTemplates(industryCode: string): Promise<Array<{ id: string; version: number }>> {
+    const results: Array<{ id: string; version: number }> = []
+    for (const template of this.store.values()) {
+      if (template.industryCode === industryCode) {
+        results.push({ id: template.id, version: template.version })
+      }
+    }
+    results.sort((a, b) => b.version - a.version)
+    return results
   }
 
   size(): number {
